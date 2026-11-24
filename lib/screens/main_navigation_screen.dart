@@ -1,0 +1,73 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../core/constants.dart';
+import 'home/home_screen.dart';
+import 'towers/towers_screen.dart';
+import 'profile/profile_screen.dart';
+
+class MainNavigationScreen extends ConsumerStatefulWidget {
+  const MainNavigationScreen({super.key});
+
+  @override
+  ConsumerState<MainNavigationScreen> createState() => _MainNavigationScreenState();
+}
+
+class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
+  int _currentIndex = 0;
+
+  final List<Widget> _screens = const [
+    HomeScreen(),
+    TowersScreen(),
+    ProfileScreen(),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _screens,
+      ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: NavigationBar(
+          selectedIndex: _currentIndex,
+          backgroundColor: AppColors.surface,
+          indicatorColor: AppColors.primary.withOpacity(0.12),
+          elevation: 0,
+          onDestinationSelected: (int index) {
+            setState(() {
+              _currentIndex = index;
+            });
+          },
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined, color: AppColors.textSecondary),
+              selectedIcon: Icon(Icons.home, color: AppColors.primary),
+              label: 'الرئيسية',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.cell_tower, color: AppColors.textSecondary),
+              selectedIcon: Icon(Icons.cell_tower, color: AppColors.primary),
+              label: 'الأبراج',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.person_outline, color: AppColors.textSecondary),
+              selectedIcon: Icon(Icons.person, color: AppColors.primary),
+              label: 'الحساب',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
