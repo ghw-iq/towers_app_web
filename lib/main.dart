@@ -12,10 +12,10 @@ import 'screens/main_navigation_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // تهيئة اتصال Supabase
+  // تهيئة اتصال Supabase باستخدام الاسم المحدث publishableKey
   await Supabase.initialize(
     url: AppConfig.supabaseUrl,
-    anonKey: AppConfig.supabaseAnonKey,
+    publishableKey: AppConfig.supabaseAnonKey,
   );
 
   runApp(

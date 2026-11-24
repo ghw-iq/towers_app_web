@@ -75,12 +75,10 @@ class _TowersScreenState extends ConsumerState<TowersScreen> {
                     );
                   }
 
-                  // إيجاد البرج المحدد حالياً
                   Tower? currentTower;
                   try {
                     currentTower = towers.firstWhere((t) => t.id == selectedTowerId);
                   } catch (_) {
-                    // افتراضياً اختيار أول برج إذا لم يكن محدد
                     if (selectedTowerId == null && towers.isNotEmpty) {
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         ref.read(selectedTowerFilterProvider.notifier).state = towers.first.id;
@@ -95,7 +93,7 @@ class _TowersScreenState extends ConsumerState<TowersScreen> {
                       Expanded(
                         child: DropdownMenu<Tower>(
                           controller: _towerController,
-                          enableFilter: true, // يتيح الكتابة والفلترة التنبئية
+                          enableFilter: true,
                           requestFocusOnTap: true,
                           width: MediaQuery.of(context).size.width - 80,
                           leadingIcon: const Icon(Icons.cell_tower, color: AppColors.primary),
@@ -115,7 +113,6 @@ class _TowersScreenState extends ConsumerState<TowersScreen> {
                           },
                         ),
                       ),
-                      // زر حذف البرج المحدد مع رسالة تأكيد
                       if (currentTower != null)
                         IconButton(
                           tooltip: 'حذف هذا البرج',
@@ -187,15 +184,15 @@ class _TowersScreenState extends ConsumerState<TowersScreen> {
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
-                              color: hasDebt ? AppColors.debtRed.withOpacity(0.3) : AppColors.border,
+                              color: hasDebt ? AppColors.debtRed.withValues(alpha: 0.3) : AppColors.border,
                             ),
                           ),
                           child: Row(
                             children: [
                               CircleAvatar(
                                 backgroundColor: hasDebt
-                                    ? AppColors.debtRed.withOpacity(0.1)
-                                    : AppColors.paidGreen.withOpacity(0.1),
+                                    ? AppColors.debtRed.withValues(alpha: 0.1)
+                                    : AppColors.paidGreen.withValues(alpha: 0.1),
                                 child: Icon(
                                   hasDebt ? Icons.warning_amber_rounded : Icons.done_all,
                                   color: hasDebt ? AppColors.debtRed : AppColors.paidGreen,
@@ -238,7 +235,6 @@ class _TowersScreenState extends ConsumerState<TowersScreen> {
                                   const SizedBox(height: 6),
                                   Row(
                                     children: [
-                                      // زر التسديد / التعديل
                                       ElevatedButton(
                                         style: ElevatedButton.styleFrom(
                                           minimumSize: const Size(60, 30),
@@ -249,7 +245,6 @@ class _TowersScreenState extends ConsumerState<TowersScreen> {
                                         child: const Text('تسديد', style: TextStyle(fontSize: 11)),
                                       ),
                                       const SizedBox(width: 4),
-                                      // زر حذف المشترك مع تأكيد
                                       IconButton(
                                         icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.textSecondary),
                                         onPressed: () => AppDialogs.showDeleteSubscriberConfirm(context, ref, sub),

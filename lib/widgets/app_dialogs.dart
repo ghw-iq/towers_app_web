@@ -172,7 +172,7 @@ class AppDialogs {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    value: selectedTowerId,
+                    initialValue: selectedTowerId, // استخدام initialValue بدلاً من value
                     decoration: const InputDecoration(labelText: 'البرج التابع له *'),
                     items: towers.map((t) {
                       return DropdownMenuItem(value: t.id, child: Text(t.name));
@@ -272,7 +272,7 @@ class AppDialogs {
     final formKey = GlobalKey<FormState>();
     final amountController = TextEditingController();
     final notesController = TextEditingController();
-    bool isPayment = true; // true: تسديد دفعة، false: إضافة دين جديد
+    bool isPayment = true;
     bool isLoading = false;
 
     await showModalBottomSheet(
@@ -324,7 +324,6 @@ class AppDialogs {
                     ),
                     const SizedBox(height: 12),
 
-                    // اختيار نوع الحركة (تسديد أو إضافة دين)
                     SegmentedButton<bool>(
                       segments: const [
                         ButtonSegment(
@@ -345,13 +344,12 @@ class AppDialogs {
                     ),
                     const SizedBox(height: 14),
 
-                    // بطاقة توضيح الدين الحالي والمتوقع بعد الحركة
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: isPayment
-                            ? AppColors.paidGreen.withOpacity(0.08)
-                            : AppColors.debtRed.withOpacity(0.08),
+                            ? AppColors.paidGreen.withValues(alpha: 0.08)
+                            : AppColors.debtRed.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Row(
@@ -387,7 +385,6 @@ class AppDialogs {
                     ),
                     const SizedBox(height: 14),
 
-                    // حقل المبلغ
                     TextFormField(
                       controller: amountController,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -406,7 +403,6 @@ class AppDialogs {
                     ),
                     const SizedBox(height: 12),
 
-                    // حقل الملاحظات
                     TextFormField(
                       controller: notesController,
                       maxLines: 2,

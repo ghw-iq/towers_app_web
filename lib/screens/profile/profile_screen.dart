@@ -189,7 +189,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 Center(
                   child: CircleAvatar(
                     radius: 46,
-                    backgroundColor: AppColors.primary.withOpacity(0.1),
+                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
                     child: const Icon(Icons.account_circle, size: 54, color: AppColors.primary),
                   ),
                 ),
@@ -273,7 +273,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.paidGreen.withOpacity(0.4)),
+                    border: Border.all(color: AppColors.paidGreen.withValues(alpha: 0.4)),
                   ),
                   child: ListTile(
                     leading: _isExporting
@@ -315,7 +315,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
                 const SizedBox(height: 24),
 
-                // 4. زر تسجيل الخروج
+                // 4. زر تسجيل الخروج مع تنظيف وتصفير الذاكرة بالكامل
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
@@ -345,6 +345,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     );
 
                     if (confirm == true) {
+                      ref.invalidate(profileProvider);
+                      ref.invalidate(towersListProvider);
+                      ref.invalidate(financialSummaryProvider);
+                      ref.invalidate(unpaidSubscribersProvider);
+                      ref.invalidate(subscribersByTowerProvider);
+                      ref.read(selectedTowerFilterProvider.notifier).state = null;
+                      ref.read(homeSearchQueryProvider.notifier).state = '';
+
                       await ref.read(appServiceProvider).signOut();
                     }
                   },
@@ -359,7 +367,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.code, size: 16, color: AppColors.primary.withOpacity(0.7)),
+                          Icon(Icons.code, size: 16, color: AppColors.primary.withValues(alpha: 0.7)),
                           const SizedBox(width: 6),
                           Text(
                             'Design by AHMED AL-JANABI',
@@ -367,7 +375,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               fontSize: 13,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 0.8,
-                              color: AppColors.textPrimary.withOpacity(0.8),
+                              color: AppColors.textPrimary.withValues(alpha: 0.8),
                             ),
                           ),
                         ],
@@ -377,7 +385,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         'إصدار 1.0.0 • جميع الحقوق محفوظة',
                         style: TextStyle(
                           fontSize: 11,
-                          color: AppColors.textSecondary.withOpacity(0.6),
+                          color: AppColors.textSecondary.withValues(alpha: 0.6),
                         ),
                       ),
                     ],

@@ -33,7 +33,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
         decoration: BoxDecoration(
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 10,
               offset: const Offset(0, -4),
             ),
@@ -42,7 +42,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
         child: NavigationBar(
           selectedIndex: _currentIndex,
           backgroundColor: AppColors.surface,
-          indicatorColor: AppColors.primary.withOpacity(0.12),
+          indicatorColor: AppColors.primary.withValues(alpha: 0.12),
           elevation: 0,
           onDestinationSelected: (int index) {
             setState(() {

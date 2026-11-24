@@ -14,31 +14,49 @@ final authStateProvider = StreamProvider<AuthState>((ref) {
   return supabase.auth.onAuthStateChange;
 });
 
-// 3. مزود بيانات الملف الشخصي (Profile)
+// 3. مراقبة معرف المستخدم الحالي (يتغير فور تسجيل الدخول أو الخروج)
+final currentUserIdProvider = Provider<String?>((ref) {
+  final authState = ref.watch(authStateProvider);
+  return authState.value?.session?.user.id ?? supabase.auth.currentUser?.id;
+});
+
+// 4. مزود بيانات الملف الشخصي (يعاد بناؤه تلقائياً عند تغيير الحساب)
 final profileProvider = FutureProvider<UserProfile>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) throw Exception('المستخدم غير مسجل الدخول');
+
   final service = ref.watch(appServiceProvider);
   return await service.getProfile();
 });
 
-// 4. مزود قائمة الأبراج (Towers)
+// 5. مزود قائمة الأبراج (مرتبط بهوية الحساب الحالي فقط)
 final towersListProvider = FutureProvider<List<Tower>>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) return [];
+
   final service = ref.watch(appServiceProvider);
   return await service.getTowers();
 });
 
-// 5. مزود الإحصائيات المالية
+// 6. مزود الإحصائيات المالية (مرتبط بهوية الحساب الحالي)
 final financialSummaryProvider = FutureProvider<Map<String, double>>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) return {'totalDebt': 0.0, 'totalPaid': 0.0};
+
   final service = ref.watch(appServiceProvider);
   return await service.getFinancialSummary();
 });
 
-// 6. مزودات التبويب الأول (الرئيسية): الترتيب والبحث والحد
+// 7. مزودات التبويب الأول (الرئيسية)
 final unpaidLimitProvider = StateProvider<int>((ref) => 10);
 final homeDebtSortProvider = StateProvider<DebtSortType>((ref) => DebtSortType.oldestDebt);
 final homeSearchQueryProvider = StateProvider<String>((ref) => '');
 
-// مزود قائمة الديون في الرئيسية (مع دعم البحث التنبئي والتصفية حسب الأقدم أو الأعلى ديناً)
+// مزود قائمة الديون في الرئيسية
 final unpaidSubscribersProvider = FutureProvider<List<Subscriber>>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) return [];
+
   final service = ref.watch(appServiceProvider);
   final limit = ref.watch(unpaidLimitProvider);
   final sortType = ref.watch(homeDebtSortProvider);
@@ -52,10 +70,13 @@ final unpaidSubscribersProvider = FutureProvider<List<Subscriber>>((ref) async {
   );
 });
 
-// 7. مزودات التبويب الثاني (الأبراج)
+// 8. مزودات التبويب الثاني (الأبراج)
 final selectedTowerFilterProvider = StateProvider<String?>((ref) => null);
 
 final subscribersByTowerProvider = FutureProvider<List<Subscriber>>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) return [];
+
   final service = ref.watch(appServiceProvider);
   final selectedTowerId = ref.watch(selectedTowerFilterProvider);
   return await service.getSubscribers(
@@ -64,9 +85,12 @@ final subscribersByTowerProvider = FutureProvider<List<Subscriber>>((ref) async 
   );
 });
 
-// 8. مزود جلب سجل الحركات والملاحظات لمشترك معين
+// 9. مزود جلب سجل الحركات والملاحظات لمشترك معين
 final subscriberTransactionsProvider =
     FutureProvider.family<List<SubscriberTransaction>, String>((ref, subscriberId) async {
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) return [];
+
   final service = ref.watch(appServiceProvider);
   return await service.getSubscriberTransactions(subscriberId);
 });

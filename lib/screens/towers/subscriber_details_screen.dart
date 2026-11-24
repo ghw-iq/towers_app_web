@@ -55,7 +55,7 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                   border: Border.all(color: AppColors.border),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.02),
+                      color: Colors.black.withValues(alpha: 0.02),
                       blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
@@ -66,8 +66,8 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                     CircleAvatar(
                       radius: 36,
                       backgroundColor: hasDebt
-                          ? AppColors.debtRed.withOpacity(0.1)
-                          : AppColors.paidGreen.withOpacity(0.1),
+                          ? AppColors.debtRed.withValues(alpha: 0.1)
+                          : AppColors.paidGreen.withValues(alpha: 0.1),
                       child: Icon(
                         hasDebt ? Icons.person_outline : Icons.check_circle_outline,
                         size: 38,
@@ -89,7 +89,7 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                       Chip(
                         avatar: const Icon(Icons.cell_tower, size: 16, color: AppColors.primary),
                         label: Text(subscriber.towerName!),
-                        backgroundColor: AppColors.primary.withOpacity(0.08),
+                        backgroundColor: AppColors.primary.withValues(alpha: 0.08),
                         side: BorderSide.none,
                       ),
                     ],
@@ -134,7 +134,7 @@ class SubscriberDetailsScreen extends ConsumerWidget {
 
               const SizedBox(height: 16),
 
-              // زر إضافة حركة مالية سريعة (تسديد أو زيادة دين)
+              // زر إضافة حركة مالية سريعة
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
@@ -203,8 +203,8 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                                 CircleAvatar(
                                   radius: 16,
                                   backgroundColor: isPayment
-                                      ? AppColors.paidGreen.withOpacity(0.12)
-                                      : AppColors.debtRed.withOpacity(0.12),
+                                      ? AppColors.paidGreen.withValues(alpha: 0.12)
+                                      : AppColors.debtRed.withValues(alpha: 0.12),
                                   child: Icon(
                                     isPayment ? Icons.south_west : Icons.north_east,
                                     color: isPayment ? AppColors.paidGreen : AppColors.debtRed,
@@ -250,7 +250,7 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                               ],
                             ),
 
-                            // الملاحظة المدونة للحركة للمراجعة مستقبلاً
+                            // الملاحظة المدونة للحركة
                             if (item.notes != null && item.notes!.isNotEmpty) ...[
                               const SizedBox(height: 10),
                               Container(
