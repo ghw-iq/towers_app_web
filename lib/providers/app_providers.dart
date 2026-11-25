@@ -29,7 +29,7 @@ final profileProvider = FutureProvider<UserProfile>((ref) async {
   return await service.getProfile();
 });
 
-// 5. مزود قائمة الأبراج (مرتبط بهوية الحساب الحالي فقط)
+// 5. مزود قائمة الأبراج
 final towersListProvider = FutureProvider<List<Tower>>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
   if (userId == null) return [];
@@ -38,10 +38,17 @@ final towersListProvider = FutureProvider<List<Tower>>((ref) async {
   return await service.getTowers();
 });
 
-// 6. مزود الإحصائيات المالية (مرتبط بهوية الحساب الحالي)
+// 6. مزود الإحصائيات المالية (تشمل صافي صندوق النقد بعد خصم الصرفيات)
 final financialSummaryProvider = FutureProvider<Map<String, double>>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
-  if (userId == null) return {'totalDebt': 0.0, 'totalPaid': 0.0};
+  if (userId == null) {
+    return {
+      'totalDebt': 0.0,
+      'totalCollected': 0.0,
+      'totalDisbursed': 0.0,
+      'totalPaid': 0.0,
+    };
+  }
 
   final service = ref.watch(appServiceProvider);
   return await service.getFinancialSummary();
@@ -52,7 +59,6 @@ final unpaidLimitProvider = StateProvider<int>((ref) => 10);
 final homeDebtSortProvider = StateProvider<DebtSortType>((ref) => DebtSortType.oldestDebt);
 final homeSearchQueryProvider = StateProvider<String>((ref) => '');
 
-// مزود قائمة الديون في الرئيسية
 final unpaidSubscribersProvider = FutureProvider<List<Subscriber>>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
   if (userId == null) return [];
@@ -93,4 +99,22 @@ final subscriberTransactionsProvider =
 
   final service = ref.watch(appServiceProvider);
   return await service.getSubscriberTransactions(subscriberId);
+});
+
+// 10. مزود أرشيف حركات صندوق النقد
+final cashBoxTransactionsProvider = FutureProvider<List<CashBoxTransaction>>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) return [];
+
+  final service = ref.watch(appServiceProvider);
+  return await service.getCashBoxTransactions();
+});
+
+// 11. مزود قائمة المستخدمين في شاشة الأدمن
+final adminUsersListProvider = FutureProvider<List<UserProfile>>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) return [];
+
+  final service = ref.watch(appServiceProvider);
+  return await service.adminGetAllUsers();
 });

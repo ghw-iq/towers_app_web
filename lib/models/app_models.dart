@@ -3,20 +3,28 @@ class UserProfile {
   final String id;
   final String fullName;
   final String phone;
+  final String role; // 'admin' أو 'user'
+  final String? passcode; // الرمز للكشف من قبل الأدمن
   final DateTime createdAt;
 
   UserProfile({
     required this.id,
     required this.fullName,
     required this.phone,
+    this.role = 'user',
+    this.passcode,
     required this.createdAt,
   });
+
+  bool get isAdmin => role == 'admin';
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
       id: json['id'] as String,
       fullName: json['full_name'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
+      role: json['role'] as String? ?? 'user',
+      passcode: json['passcode'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -26,17 +34,23 @@ class UserProfile {
       'id': id,
       'full_name': fullName,
       'phone': phone,
+      'role': role,
+      if (passcode != null) 'passcode': passcode,
     };
   }
 
   UserProfile copyWith({
     String? fullName,
     String? phone,
+    String? role,
+    String? passcode,
   }) {
     return UserProfile(
       id: id,
       fullName: fullName ?? this.fullName,
       phone: phone ?? this.phone,
+      role: role ?? this.role,
+      passcode: passcode ?? this.passcode,
       createdAt: createdAt,
     );
   }
@@ -155,7 +169,7 @@ class Subscriber {
   }
 }
 
-// 4. نموذج سجل الحركات المالية والملاحظات (Subscriber Transaction)
+// 4. نموذج سجل الحركات المالية والملاحظات للمشترك (Subscriber Transaction)
 class SubscriberTransaction {
   final String id;
   final String userId;
@@ -197,6 +211,45 @@ class SubscriberTransaction {
       'type': type,
       'amount': amount,
       'remaining_debt': remainingDebt,
+      if (notes != null) 'notes': notes,
+    };
+  }
+}
+
+// 5. نموذج حركات صندوق النقد (Cash Box Transaction)
+class CashBoxTransaction {
+  final String id;
+  final String userId;
+  final String title;
+  final double amount;
+  final String? notes;
+  final DateTime createdAt;
+
+  CashBoxTransaction({
+    required this.id,
+    required this.userId,
+    required this.title,
+    required this.amount,
+    this.notes,
+    required this.createdAt,
+  });
+
+  factory CashBoxTransaction.fromJson(Map<String, dynamic> json) {
+    return CashBoxTransaction(
+      id: json['id'] as String,
+      userId: json['user_id'] as String,
+      title: json['title'] as String? ?? '',
+      amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
+      notes: json['notes'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'user_id': userId,
+      'title': title,
+      'amount': amount,
       if (notes != null) 'notes': notes,
     };
   }

@@ -8,6 +8,7 @@ import '../../providers/app_providers.dart';
 import '../../services/app_service.dart';
 import '../../widgets/app_dialogs.dart';
 import '../towers/subscriber_details_screen.dart';
+import 'cash_box_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -44,6 +45,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onPressed: () {
               ref.invalidate(financialSummaryProvider);
               ref.invalidate(unpaidSubscribersProvider);
+              ref.invalidate(cashBoxTransactionsProvider);
             },
           ),
         ],
@@ -52,6 +54,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onRefresh: () async {
           ref.invalidate(financialSummaryProvider);
           ref.invalidate(unpaidSubscribersProvider);
+          ref.invalidate(cashBoxTransactionsProvider);
         },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -59,11 +62,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 1. بطاقات الملخص المالي
+              // 1. بطاقات الملخص المالي (إجمالي الديون & صندوق النقد التفاعلي)
               summaryAsync.when(
                 data: (summary) {
                   final totalDebt = summary['totalDebt'] ?? 0;
-                  final totalPaid = summary['totalPaid'] ?? 0;
+                  final netCash = summary['totalPaid'] ?? 0;
 
                   return Row(
                     children: [
@@ -77,11 +80,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: _buildFinancialCard(
-                          title: 'إجمالي النقد',
-                          amount: '${currencyFormatter.format(totalPaid)} د.ع',
-                          icon: Icons.account_balance_wallet_outlined,
-                          color: AppColors.paidGreen,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const CashBoxScreen()),
+                            );
+                          },
+                          child: _buildFinancialCard(
+                            title: 'صندوق النقد',
+                            amount: '${currencyFormatter.format(netCash)} د.ع',
+                            icon: Icons.account_balance_wallet_outlined,
+                            color: AppColors.paidGreen,
+                            isInteractive: true,
+                          ),
                         ),
                       ),
                     ],
@@ -295,13 +308,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     required String amount,
     required IconData icon,
     required Color color,
+    bool isInteractive = false,
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(
+          color: isInteractive ? color.withValues(alpha: 0.4) : AppColors.border,
+          width: isInteractive ? 1.5 : 1,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.02),
@@ -313,10 +330,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: color.withValues(alpha: 0.12),
-            child: Icon(icon, color: color, size: 18),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: color.withValues(alpha: 0.12),
+                child: Icon(icon, color: color, size: 18),
+              ),
+              if (isInteractive)
+                Icon(Icons.touch_app_outlined, size: 18, color: color.withValues(alpha: 0.7)),
+            ],
           ),
           const SizedBox(height: 12),
           Text(title, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),

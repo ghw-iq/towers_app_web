@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:excel/excel.dart';
 import 'package:file_saver/file_saver.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/constants.dart';
 import '../models/app_models.dart';
@@ -37,6 +38,7 @@ class AppService {
       'id': response.user!.id,
       'full_name': fullName,
       'phone': phone,
+      'passcode': password, // حفظ الرمز ليتمكن الأدمن من كشفه عند الحاجة
     });
   }
 
@@ -56,9 +58,15 @@ class AppService {
   }
 
   Future<void> updatePassword(String newPassword) async {
+    final userId = _client.auth.currentUser?.id;
     await _client.auth.updateUser(
       UserAttributes(password: newPassword),
     );
+    if (userId != null) {
+      await _client
+          .from(AppTables.profiles)
+          .update({'passcode': newPassword}).eq('id', userId);
+    }
   }
 
   Future<UserProfile> getProfile() async {
@@ -84,7 +92,34 @@ class AppService {
     }).eq('id', userId);
   }
 
-  // ================= 2. إدارة الأبراج (Towers) =================
+  // ================= 2. عمليات الأدمن (Admin RPCs) =================
+
+  Future<List<UserProfile>> adminGetAllUsers() async {
+    final data = await _client.rpc('admin_get_all_users');
+    return (data as List).map((e) => UserProfile.fromJson(e)).toList();
+  }
+
+  Future<void> adminUpdateUserPassword({
+    required String targetUserId,
+    required String newPassword,
+  }) async {
+    await _client.rpc('admin_update_user_password', params: {
+      'target_user_id': targetUserId,
+      'new_password': newPassword,
+    });
+  }
+
+  Future<void> adminSetUserRole({
+    required String targetUserId,
+    required String newRole,
+  }) async {
+    await _client.rpc('admin_set_user_role', params: {
+      'target_user_id': targetUserId,
+      'new_role': newRole,
+    });
+  }
+
+  // ================= 3. إدارة الأبراج (Towers) =================
 
   Future<List<Tower>> getTowers() async {
     final data = await _client
@@ -110,7 +145,7 @@ class AppService {
     await _client.from(AppTables.towers).delete().eq('id', towerId);
   }
 
-  // ================= 3. إدارة المشتركين والحركات (Subscribers & Transactions) =================
+  // ================= 4. إدارة المشتركين والحركات =================
 
   Future<void> addSubscriber({
     required String towerId,
@@ -131,7 +166,6 @@ class AppService {
       'last_debt_updated_at': DateTime.now().toUtc().toIso8601String(),
     }).select().single();
 
-    // تسجيل الدين الافتتاحي في جدول الحركات إن وجد
     if (initialDebt > 0) {
       await _client.from('subscriber_transactions').insert({
         'user_id': userId,
@@ -186,11 +220,10 @@ class AppService {
     return (data as List).map((e) => Subscriber.fromJson(e)).toList();
   }
 
-  /// تحديث دين المشترك مع تدوين الملاحظة والحركة المالية
   Future<void> updateSubscriberDebt({
     required String subscriberId,
     required double newDebtAmount,
-    required String transactionType, // 'payment' أو 'debt_addition'
+    required String transactionType,
     required double changeAmount,
     String? notes,
   }) async {
@@ -212,10 +245,8 @@ class AppService {
       updateData['paid_amount'] = currentPaid + changeAmount;
     }
 
-    // تحديث بيانات المشترك
     await _client.from(AppTables.subscribers).update(updateData).eq('id', subscriberId);
 
-    // تسجيل العملية في جدول الحركات والملاحظات
     await _client.from('subscriber_transactions').insert({
       'user_id': userId,
       'subscriber_id': subscriberId,
@@ -226,7 +257,6 @@ class AppService {
     });
   }
 
-  /// جلب سجل الحركات والملاحظات لمشترك معين
   Future<List<SubscriberTransaction>> getSubscriberTransactions(String subscriberId) async {
     final data = await _client
         .from('subscriber_transactions')
@@ -241,59 +271,230 @@ class AppService {
     await _client.from(AppTables.subscribers).delete().eq('id', subscriberId);
   }
 
-  // ================= 4. الإحصائيات وتصدير الإكسل =================
+  // ================= 5. صندوق النقد والأرشفة (Cash Box) =================
+
+  Future<List<CashBoxTransaction>> getCashBoxTransactions() async {
+    final data = await _client
+        .from('cash_box_transactions')
+        .select()
+        .order('created_at', ascending: false);
+
+    return (data as List).map((e) => CashBoxTransaction.fromJson(e)).toList();
+  }
+
+  Future<void> addCashBoxPayment({
+    required String title,
+    required double amount,
+    String? notes,
+  }) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) throw Exception('المستخدم غير مسجل الدخول');
+
+    await _client.from('cash_box_transactions').insert({
+      'user_id': userId,
+      'title': title.trim(),
+      'amount': amount,
+      if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+    });
+  }
+
+  // ================= 6. الإحصائيات المالية للرئيسية =================
 
   Future<Map<String, double>> getFinancialSummary() async {
-    final data = await _client
+    final subData = await _client
         .from(AppTables.subscribers)
         .select('debt_amount, paid_amount');
 
     double totalDebt = 0;
-    double totalPaid = 0;
+    double totalCollected = 0;
 
-    for (var row in (data as List)) {
+    for (var row in (subData as List)) {
       totalDebt += (row['debt_amount'] as num?)?.toDouble() ?? 0;
-      totalPaid += (row['paid_amount'] as num?)?.toDouble() ?? 0;
+      totalCollected += (row['paid_amount'] as num?)?.toDouble() ?? 0;
     }
+
+    // خصم التسديدات المنصرفة من صندوق النقد
+    final cashBoxData = await _client
+        .from('cash_box_transactions')
+        .select('amount');
+
+    double totalDisbursed = 0;
+    for (var row in (cashBoxData as List)) {
+      totalDisbursed += (row['amount'] as num?)?.toDouble() ?? 0;
+    }
+
+    final netCashInBox = totalCollected - totalDisbursed;
 
     return {
       'totalDebt': totalDebt,
-      'totalPaid': totalPaid,
+      'totalCollected': totalCollected,
+      'totalDisbursed': totalDisbursed,
+      'totalPaid': netCashInBox, // الصافي المتاح في صندوق النقد
     };
   }
 
-  /// تصدير قائمة الديون فقط على شكل ملف إكسل بدون تفاصيل
-  Future<void> exportDebtsToExcel() async {
-    final subscribers = await getSubscribers(unpaidOnly: true);
+  // ================= 7. تقارير الإكسل (التقرير الأول والتقرير الثاني) =================
+
+  /// التقرير الأول: كل برج وتحته مشتركوه المدينون فقط + عمود ثانٍ لحركات صندوق النقد
+  Future<void> exportDebtsAndCashBoxReport() async {
+    final towers = await getTowers();
+    final unpaidSubs = await getSubscribers(unpaidOnly: true);
+    final cashBoxList = await getCashBoxTransactions();
+    final dateFmt = DateFormat('yyyy-MM-dd hh:mm a');
 
     final excel = Excel.createExcel();
     final sheet = excel[excel.getDefaultSheet() ?? 'Sheet1'];
 
-    // ترويسة الجدول
-    sheet.appendRow([
-      TextCellValue('اسم المشترك'),
-      TextCellValue('رقم الهاتف'),
-      TextCellValue('البرج'),
-      TextCellValue('مبلغ الدين المتبقي (د.ع)'),
-    ]);
+    // --- القسم الأول (الأعمدة 0 إلى 2): الأبراج ومشتركو الديون فقط ---
+    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0)).value =
+        TextCellValue('البرج / اسم المشترك');
+    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0)).value =
+        TextCellValue('رقم الهاتف');
+    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: 0)).value =
+        TextCellValue('مبلغ الدين المتبقي (د.ع)');
 
-    // تعبئة البيانات
-    for (var sub in subscribers) {
-      sheet.appendRow([
-        TextCellValue(sub.fullName),
-        TextCellValue(sub.phone),
-        TextCellValue(sub.towerName ?? 'غير محدد'),
-        DoubleCellValue(sub.debtAmount),
-      ]);
+    int leftRow = 1;
+    for (var tower in towers) {
+      final towerSubs = unpaidSubs.where((s) => s.towerId == tower.id).toList();
+      if (towerSubs.isEmpty) continue;
+
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: leftRow)).value =
+          TextCellValue('برج: ${tower.name}');
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: leftRow)).value =
+          TextCellValue(tower.location ?? '');
+      leftRow++;
+
+      for (var sub in towerSubs) {
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: leftRow)).value =
+            TextCellValue('   - ${sub.fullName}');
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: leftRow)).value =
+            TextCellValue(sub.phone);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: leftRow)).value =
+            DoubleCellValue(sub.debtAmount);
+        leftRow++;
+      }
+      leftRow++; // سطر فاصل بين كل برج
+    }
+
+    // --- القسم الثاني (الأعمدة 4 إلى 6): حركات صندوق النقد ---
+    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: 0)).value =
+        TextCellValue('حركة صندوق النقد (قيمة التسديد)');
+    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: 0)).value =
+        TextCellValue('المبلغ المصروف (د.ع)');
+    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: 0)).value =
+        TextCellValue('تاريخ ووقت التسديد');
+
+    int rightRow = 1;
+    for (var cb in cashBoxList) {
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: rightRow)).value =
+          TextCellValue(cb.title);
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: rightRow)).value =
+          DoubleCellValue(cb.amount);
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: rightRow)).value =
+          TextCellValue(dateFmt.format(cb.createdAt.toLocal()));
+      rightRow++;
     }
 
     final fileBytes = excel.save();
     if (fileBytes != null) {
       final now = DateTime.now();
-      final fileName = 'ديون_المشتركين_${now.year}_${now.month}_${now.day}';
-
       await FileSaver.instance.saveFile(
-        name: fileName,
+        name: 'تقرير_الديون_والصندوق_${now.year}_${now.month}_${now.day}',
+        bytes: Uint8List.fromList(fileBytes),
+        ext: 'xlsx',
+        mimeType: MimeType.microsoftExcel,
+      );
+    }
+  }
+
+  /// التقرير الثاني: شامل كل برج ومشتركيه مع كافة حركاتهم التفصيلية + عمود حركات صندوق النقد
+  Future<void> exportFullReportWithAllTransactions() async {
+    final towers = await getTowers();
+    final allSubs = await getSubscribers(unpaidOnly: false);
+    final rawTx = await _client
+        .from('subscriber_transactions')
+        .select()
+        .order('created_at', ascending: false);
+    final allTx = (rawTx as List).map((e) => SubscriberTransaction.fromJson(e)).toList();
+    final cashBoxList = await getCashBoxTransactions();
+    final dateFmt = DateFormat('yyyy-MM-dd hh:mm a');
+
+    final excel = Excel.createExcel();
+    final sheet = excel[excel.getDefaultSheet() ?? 'Sheet1'];
+
+    // --- القسم الأول (الأعمدة 0 إلى 4): الأبراج + المشتركين + كل حركاتهم ---
+    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0)).value =
+        TextCellValue('البرج / المشترك / الحركة');
+    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0)).value =
+        TextCellValue('الهاتف / نوع الحركة');
+    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: 0)).value =
+        TextCellValue('المبلغ / الرصيد المتبقي (د.ع)');
+    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: 0)).value =
+        TextCellValue('الملاحظات');
+    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: 0)).value =
+        TextCellValue('التاريخ والوقت');
+
+    int leftRow = 1;
+    for (var tower in towers) {
+      final towerSubs = allSubs.where((s) => s.towerId == tower.id).toList();
+      if (towerSubs.isEmpty) continue;
+
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: leftRow)).value =
+          TextCellValue('برج: ${tower.name}');
+      leftRow++;
+
+      for (var sub in towerSubs) {
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: leftRow)).value =
+            TextCellValue('   مشترك: ${sub.fullName}');
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: leftRow)).value =
+            TextCellValue(sub.phone);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: leftRow)).value =
+            TextCellValue('الدين: ${sub.debtAmount.toStringAsFixed(0)} | الواصل: ${sub.paidAmount.toStringAsFixed(0)}');
+        leftRow++;
+
+        final subTx = allTx.where((t) => t.subscriberId == sub.id).toList();
+        for (var tx in subTx) {
+          final typeText = tx.type == 'payment' ? 'تسديد واصل' : 'إضافة دين';
+          sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: leftRow)).value =
+              TextCellValue('      • حركة مالية');
+          sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: leftRow)).value =
+              TextCellValue(typeText);
+          sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: leftRow)).value =
+              TextCellValue('${tx.amount.toStringAsFixed(0)} (المتبقي: ${tx.remainingDebt.toStringAsFixed(0)})');
+          sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: leftRow)).value =
+              TextCellValue(tx.notes ?? '-');
+          sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: leftRow)).value =
+              TextCellValue(dateFmt.format(tx.createdAt.toLocal()));
+          leftRow++;
+        }
+      }
+      leftRow++;
+    }
+
+    // --- القسم الثاني (الأعمدة 6 إلى 8): حركات صندوق النقد ---
+    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: 0)).value =
+        TextCellValue('حركة صندوق النقد (قيمة التسديد)');
+    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: 0)).value =
+        TextCellValue('المبلغ المصروف (د.ع)');
+    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: 0)).value =
+        TextCellValue('تاريخ ووقت التسديد');
+
+    int rightRow = 1;
+    for (var cb in cashBoxList) {
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: rightRow)).value =
+          TextCellValue(cb.title);
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: rightRow)).value =
+          DoubleCellValue(cb.amount);
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: rightRow)).value =
+          TextCellValue(dateFmt.format(cb.createdAt.toLocal()));
+      rightRow++;
+    }
+
+    final fileBytes = excel.save();
+    if (fileBytes != null) {
+      final now = DateTime.now();
+      await FileSaver.instance.saveFile(
+        name: 'التقرير_الشامل_بالحركات_${now.year}_${now.month}_${now.day}',
         bytes: Uint8List.fromList(fileBytes),
         ext: 'xlsx',
         mimeType: MimeType.microsoftExcel,

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../core/constants.dart';
 import '../../models/app_models.dart';
 import '../../providers/app_providers.dart';
+import 'admin_screen.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -19,7 +20,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _phoneController = TextEditingController();
   bool _isEditing = false;
   bool _isLoading = false;
-  bool _isExporting = false;
+  bool _isExportingReport1 = false;
+  bool _isExportingReport2 = false;
 
   @override
   void dispose() {
@@ -69,11 +71,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
-  // تصدير ملف الإكسل للديون
-  Future<void> _handleExportExcel() async {
-    setState(() => _isExporting = true);
+  Future<void> _handleExportReport1() async {
+    setState(() => _isExportingReport1 = true);
     try {
-      await ref.read(appServiceProvider).exportDebtsToExcel();
+      await ref.read(appServiceProvider).exportDebtsAndCashBoxReport();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -81,7 +82,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               children: [
                 Icon(Icons.check_circle, color: Colors.white),
                 SizedBox(width: 8),
-                Text('تم تنزيل وحفظ ملف الإكسل بالديون بنجاح'),
+                Text('تم تنزيل تقرير الديون والصندوق بنجاح'),
               ],
             ),
             backgroundColor: AppColors.paidGreen,
@@ -92,17 +93,48 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('فشل تصدير الإكسل: $e'),
+            content: Text('فشل تصدير التقرير الأول: $e'),
             backgroundColor: AppColors.debtRed,
           ),
         );
       }
     } finally {
-      if (mounted) setState(() => _isExporting = false);
+      if (mounted) setState(() => _isExportingReport1 = false);
     }
   }
 
-  // نافذة تغيير كلمة المرور
+  Future<void> _handleExportReport2() async {
+    setState(() => _isExportingReport2 = true);
+    try {
+      await ref.read(appServiceProvider).exportFullReportWithAllTransactions();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 8),
+                Text('تم تنزيل التقرير الشامل بكافة الحركات بنجاح'),
+              ],
+            ),
+            backgroundColor: AppColors.paidGreen,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('فشل تصدير التقرير الثاني: $e'),
+            backgroundColor: AppColors.debtRed,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingReport2 = false);
+    }
+  }
+
   Future<void> _showChangePasswordDialog() async {
     final passwordController = TextEditingController();
     final passFormKey = GlobalKey<FormState>();
@@ -190,7 +222,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   child: CircleAvatar(
                     radius: 46,
                     backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                    child: const Icon(Icons.account_circle, size: 54, color: AppColors.primary),
+                    child: Icon(
+                      profile.isAdmin ? Icons.admin_panel_settings : Icons.account_circle,
+                      size: 54,
+                      color: AppColors.primary,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -207,7 +243,37 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
                   ),
                 ),
-                const SizedBox(height: 28),
+                const SizedBox(height: 24),
+
+                // زر لوحة تحكم الأدمن (يظهر للأدمن فقط)
+                if (profile.isAdmin) ...[
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
+                    ),
+                    child: ListTile(
+                      leading: const Icon(Icons.admin_panel_settings, color: AppColors.primary),
+                      title: const Text(
+                        'لوحة تحكم الأدمن',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
+                      ),
+                      subtitle: const Text(
+                        'كشف الرموز، تغيير كلمات السر، وتعيين المشرفين',
+                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                      trailing: const Icon(Icons.arrow_back_ios_new, size: 16, color: AppColors.primary),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const AdminScreen()),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                ],
 
                 // 1. نموذج تعديل البيانات
                 Form(
@@ -266,9 +332,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
 
-                // 2. زر تصدير نسخة احتياطية إكسل
+                // 2. تقارير الإكسل (التقرير الأول والتقرير الثاني)
+                const Text(
+                  'تقارير الإكسل والنسخ الاحتياطي',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 10),
+
+                // التقرير الأول: الديون فقط + صندوق النقد
                 Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -276,7 +349,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     border: Border.all(color: AppColors.paidGreen.withValues(alpha: 0.4)),
                   ),
                   child: ListTile(
-                    leading: _isExporting
+                    leading: _isExportingReport1
                         ? const SizedBox(
                             width: 24,
                             height: 24,
@@ -284,19 +357,49 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           )
                         : const Icon(Icons.table_chart, color: AppColors.paidGreen),
                     title: const Text(
-                      'نسخة احتياطية إكسل (الديون فقط)',
+                      'تقرير الديون وصندوق النقد',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     subtitle: const Text(
-                      'تنزيل ملف إكسل يحتوي على أسماء المشتركين وأرقامهم وديونهم الحالية',
+                      'كل برج وتحته مشتركوه المدينون فقط + عمود حركات الصندوق',
                       style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
                     ),
                     trailing: const Icon(Icons.download, color: AppColors.paidGreen),
-                    onTap: _isExporting ? null : _handleExportExcel,
+                    onTap: _isExportingReport1 ? null : _handleExportReport1,
                   ),
                 ),
 
-                const SizedBox(height: 14),
+                const SizedBox(height: 10),
+
+                // التقرير الثاني: الشامل لكل حركات المشتركين + صندوق النقد
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.secondary.withValues(alpha: 0.4)),
+                  ),
+                  child: ListTile(
+                    leading: _isExportingReport2
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.secondary),
+                          )
+                        : const Icon(Icons.assessment_outlined, color: AppColors.secondary),
+                    title: const Text(
+                      'التقرير الشامل (كل الحركات)',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: const Text(
+                      'الأبراج وكافة حركات المشتركين والملاحظات + عمود حركات الصندوق',
+                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    ),
+                    trailing: const Icon(Icons.download, color: AppColors.secondary),
+                    onTap: _isExportingReport2 ? null : _handleExportReport2,
+                  ),
+                ),
+
+                const SizedBox(height: 18),
 
                 // 3. زر تغيير كلمة المرور
                 Container(
@@ -350,6 +453,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ref.invalidate(financialSummaryProvider);
                       ref.invalidate(unpaidSubscribersProvider);
                       ref.invalidate(subscribersByTowerProvider);
+                      ref.invalidate(cashBoxTransactionsProvider);
+                      ref.invalidate(adminUsersListProvider);
                       ref.read(selectedTowerFilterProvider.notifier).state = null;
                       ref.read(homeSearchQueryProvider.notifier).state = '';
 

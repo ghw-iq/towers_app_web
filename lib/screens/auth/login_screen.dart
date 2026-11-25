@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants.dart';
 import '../../providers/app_providers.dart';
-import 'forgot_password_screen.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -51,6 +50,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  void _showForgotPasswordDisabledDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.info_outline, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text('ميزة معطلة مؤقتاً'),
+          ],
+        ),
+        content: const Text(
+          'تم إيقاف خاصية استعادة كلمة السر التلقائية مؤقتاً لحين توفير وسيلة تحقق.\n\nيرجى التواصل مع الأدمن (الإدارة) لكشف أو تغيير رمز الدخول الخاص بك.',
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('حسناً'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -64,7 +88,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // أيقونة التطبيق
                   Container(
                     width: 80,
                     height: 80,
@@ -133,18 +156,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   const SizedBox(height: 8),
 
-                  // رابط استعادة كلمة السر
+                  // زر نسيت كلمة السر (معطل مؤقتاً مع إشعار للمستخدم)
                   Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton(
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const ForgotPasswordScreen(),
-                          ),
-                        );
-                      },
-                      child: const Text('نسيت كلمة السر؟'),
+                      onPressed: _showForgotPasswordDisabledDialog,
+                      child: const Text(
+                        'نسيت كلمة السر؟',
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 20),
