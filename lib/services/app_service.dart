@@ -38,7 +38,7 @@ class AppService {
       'id': response.user!.id,
       'full_name': fullName,
       'phone': phone,
-      'passcode': password, // حفظ الرمز ليتمكن الأدمن من كشفه عند الحاجة
+      'passcode': password,
     });
   }
 
@@ -313,7 +313,6 @@ class AppService {
       totalCollected += (row['paid_amount'] as num?)?.toDouble() ?? 0;
     }
 
-    // خصم التسديدات المنصرفة من صندوق النقد
     final cashBoxData = await _client
         .from('cash_box_transactions')
         .select('amount');
@@ -329,73 +328,178 @@ class AppService {
       'totalDebt': totalDebt,
       'totalCollected': totalCollected,
       'totalDisbursed': totalDisbursed,
-      'totalPaid': netCashInBox, // الصافي المتاح في صندوق النقد
+      'totalPaid': netCashInBox,
     };
   }
 
-  // ================= 7. تقارير الإكسل (التقرير الأول والتقرير الثاني) =================
+  // ================= 7. أدوات تنسيق الإكسل الاحترافية =================
 
-  /// التقرير الأول: كل برج وتحته مشتركوه المدينون فقط + عمود ثانٍ لحركات صندوق النقد
+  void _styleCell(
+    Sheet sheet,
+    int col,
+    int row,
+    CellValue value,
+    CellStyle style,
+  ) {
+    final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row));
+    cell.value = value;
+    cell.cellStyle = style;
+  }
+
+  Border get _thinBorder => Border(
+        borderStyle: BorderStyle.Thin,
+        borderColorHex: ExcelColor.fromHexString('#FFCBD5E1'),
+      );
+
+  CellStyle _headerStyle(String hexColor) => CellStyle(
+        bold: true,
+        fontSize: 12,
+        fontColorHex: ExcelColor.white,
+        backgroundColorHex: ExcelColor.fromHexString(hexColor),
+        horizontalAlign: HorizontalAlign.Center,
+        verticalAlign: VerticalAlign.Center,
+        topBorder: _thinBorder,
+        bottomBorder: _thinBorder,
+        leftBorder: _thinBorder,
+        rightBorder: _thinBorder,
+      );
+
+  CellStyle get _towerStyle => CellStyle(
+        bold: true,
+        fontSize: 11,
+        fontColorHex: ExcelColor.fromHexString('#FF1E3A8A'),
+        backgroundColorHex: ExcelColor.fromHexString('#FFDBEAFE'),
+        horizontalAlign: HorizontalAlign.Right,
+        verticalAlign: VerticalAlign.Center,
+        topBorder: _thinBorder,
+        bottomBorder: _thinBorder,
+        leftBorder: _thinBorder,
+        rightBorder: _thinBorder,
+      );
+
+  CellStyle _bodyStyle({String? fontHex, String? bgHex, bool bold = false, HorizontalAlign align = HorizontalAlign.Right}) =>
+      CellStyle(
+        bold: bold,
+        fontSize: 11,
+        fontColorHex: fontHex != null ? ExcelColor.fromHexString(fontHex) : ExcelColor.black,
+        backgroundColorHex: bgHex != null ? ExcelColor.fromHexString(bgHex) : ExcelColor.none,
+        horizontalAlign: align,
+        verticalAlign: VerticalAlign.Center,
+        topBorder: _thinBorder,
+        bottomBorder: _thinBorder,
+        leftBorder: _thinBorder,
+        rightBorder: _thinBorder,
+      );
+
+  /// دالة مساعدة لكتابة جدول صندوق النقد بتفاصيله الكاملة في الأعمدة المحددة
+  void _writeCashBoxSection(
+    Sheet sheet,
+    int startCol,
+    List<CashBoxTransaction> cashBoxList,
+    Map<String, double> summary,
+    DateFormat dateFmt,
+  ) {
+    final cashHeaderStyle = _headerStyle('#FF0D9488'); // لون تيل مميز للصندوق
+    sheet.setColumnWidth(startCol, 28);
+    sheet.setColumnWidth(startCol + 1, 20);
+    sheet.setColumnWidth(startCol + 2, 30);
+    sheet.setColumnWidth(startCol + 3, 24);
+
+    _styleCell(sheet, startCol, 0, TextCellValue('صندوق النقد (قيمة التسديد)'), cashHeaderStyle);
+    _styleCell(sheet, startCol + 1, 0, TextCellValue('المبلغ المصروف (د.ع)'), cashHeaderStyle);
+    _styleCell(sheet, startCol + 2, 0, TextCellValue('الملاحظات والتفاصيل'), cashHeaderStyle);
+    _styleCell(sheet, startCol + 3, 0, TextCellValue('التاريخ والوقت'), cashHeaderStyle);
+
+    int row = 1;
+    for (var cb in cashBoxList) {
+      final bg = row % 2 == 0 ? '#FFF8FAFC' : null;
+      _styleCell(sheet, startCol, row, TextCellValue(cb.title), _bodyStyle(bgHex: bg, bold: true));
+      _styleCell(sheet, startCol + 1, row, DoubleCellValue(cb.amount),
+          _bodyStyle(bgHex: bg, fontHex: '#FFDC2626', bold: true, align: HorizontalAlign.Center));
+      _styleCell(sheet, startCol + 2, row, TextCellValue(cb.notes ?? 'لا توجد ملاحظات'),
+          _bodyStyle(bgHex: bg, fontHex: '#FF475569'));
+      _styleCell(sheet, startCol + 3, row, TextCellValue(dateFmt.format(cb.createdAt.toLocal())),
+          _bodyStyle(bgHex: bg, align: HorizontalAlign.Center));
+      row++;
+    }
+
+    // ملخص أرصدة الصندوق أسفل الحركات
+    row++;
+    final summaryLabelStyle = _bodyStyle(bgHex: '#FFF1F5F9', bold: true);
+    _styleCell(sheet, startCol, row, TextCellValue('إجمالي الواصل من المشتركين'), summaryLabelStyle);
+    _styleCell(sheet, startCol + 1, row, DoubleCellValue(summary['totalCollected'] ?? 0),
+        _bodyStyle(bgHex: '#FFF1F5F9', fontHex: '#FF16A34A', bold: true, align: HorizontalAlign.Center));
+    row++;
+
+    _styleCell(sheet, startCol, row, TextCellValue('إجمالي مصروفات الصندوق'), summaryLabelStyle);
+    _styleCell(sheet, startCol + 1, row, DoubleCellValue(summary['totalDisbursed'] ?? 0),
+        _bodyStyle(bgHex: '#FFF1F5F9', fontHex: '#FFDC2626', bold: true, align: HorizontalAlign.Center));
+    row++;
+
+    _styleCell(sheet, startCol, row, TextCellValue('الصافي المتبقي بالصندوق'), _headerStyle('#FF16A34A'));
+    _styleCell(sheet, startCol + 1, row, DoubleCellValue(summary['totalPaid'] ?? 0), _headerStyle('#FF16A34A'));
+  }
+
+  /// التقرير الأول: كل برج وتحته مشتركوه المدينون فقط + عمود حركات صندوق النقد بتفاصيلها
   Future<void> exportDebtsAndCashBoxReport() async {
     final towers = await getTowers();
     final unpaidSubs = await getSubscribers(unpaidOnly: true);
     final cashBoxList = await getCashBoxTransactions();
+    final summary = await getFinancialSummary();
     final dateFmt = DateFormat('yyyy-MM-dd hh:mm a');
 
     final excel = Excel.createExcel();
-    final sheet = excel[excel.getDefaultSheet() ?? 'Sheet1'];
+    final defaultName = excel.getDefaultSheet() ?? 'Sheet1';
+    excel.rename(defaultName, 'الديون والصندوق');
+    final sheet = excel['الديون والصندوق'];
+    sheet.isRTL = true; // اتجاه عربي من اليمين لليسار
 
-    // --- القسم الأول (الأعمدة 0 إلى 2): الأبراج ومشتركو الديون فقط ---
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0)).value =
-        TextCellValue('البرج / اسم المشترك');
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0)).value =
-        TextCellValue('رقم الهاتف');
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: 0)).value =
-        TextCellValue('مبلغ الدين المتبقي (د.ع)');
+    sheet.setRowHeight(0, 28);
+    sheet.setColumnWidth(0, 30);
+    sheet.setColumnWidth(1, 18);
+    sheet.setColumnWidth(2, 22);
+    sheet.setColumnWidth(3, 5); // عمود فاصل أنيق
+
+    final mainHeaderStyle = _headerStyle('#FF1E3A8A');
+    _styleCell(sheet, 0, 0, TextCellValue('البرج / اسم المشترك'), mainHeaderStyle);
+    _styleCell(sheet, 1, 0, TextCellValue('رقم الهاتف'), mainHeaderStyle);
+    _styleCell(sheet, 2, 0, TextCellValue('الدين المتبقي (د.ع)'), mainHeaderStyle);
 
     int leftRow = 1;
+    double grandTotalDebt = 0;
+
     for (var tower in towers) {
       final towerSubs = unpaidSubs.where((s) => s.towerId == tower.id).toList();
       if (towerSubs.isEmpty) continue;
 
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: leftRow)).value =
-          TextCellValue('برج: ${tower.name}');
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: leftRow)).value =
-          TextCellValue(tower.location ?? '');
+      sheet.setRowHeight(leftRow, 22);
+      _styleCell(sheet, 0, leftRow, TextCellValue('📡 برج: ${tower.name}'), _towerStyle);
+      _styleCell(sheet, 1, leftRow, TextCellValue(tower.location ?? ''), _towerStyle);
+      _styleCell(sheet, 2, leftRow, TextCellValue(''), _towerStyle);
       leftRow++;
 
       for (var sub in towerSubs) {
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: leftRow)).value =
-            TextCellValue('   - ${sub.fullName}');
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: leftRow)).value =
-            TextCellValue(sub.phone);
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: leftRow)).value =
-            DoubleCellValue(sub.debtAmount);
+        grandTotalDebt += sub.debtAmount;
+        _styleCell(sheet, 0, leftRow, TextCellValue('   • ${sub.fullName}'), _bodyStyle());
+        _styleCell(sheet, 1, leftRow, TextCellValue(sub.phone),
+            _bodyStyle(align: HorizontalAlign.Center));
+        _styleCell(sheet, 2, leftRow, DoubleCellValue(sub.debtAmount),
+            _bodyStyle(fontHex: '#FFDC2626', bold: true, align: HorizontalAlign.Center));
         leftRow++;
       }
-      leftRow++; // سطر فاصل بين كل برج
+      leftRow++;
     }
 
-    // --- القسم الثاني (الأعمدة 4 إلى 6): حركات صندوق النقد ---
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: 0)).value =
-        TextCellValue('حركة صندوق النقد (قيمة التسديد)');
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: 0)).value =
-        TextCellValue('المبلغ المصروف (د.ع)');
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: 0)).value =
-        TextCellValue('تاريخ ووقت التسديد');
+    // إجمالي الديون أسفل التقرير
+    _styleCell(sheet, 0, leftRow, TextCellValue('إجمالي كافة الديون المستحقة'), _headerStyle('#FFDC2626'));
+    _styleCell(sheet, 1, leftRow, TextCellValue(''), _headerStyle('#FFDC2626'));
+    _styleCell(sheet, 2, leftRow, DoubleCellValue(grandTotalDebt), _headerStyle('#FFDC2626'));
 
-    int rightRow = 1;
-    for (var cb in cashBoxList) {
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: rightRow)).value =
-          TextCellValue(cb.title);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: rightRow)).value =
-          DoubleCellValue(cb.amount);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: rightRow)).value =
-          TextCellValue(dateFmt.format(cb.createdAt.toLocal()));
-      rightRow++;
-    }
+    // كتابة جدول صندوق النقد بتفاصيله الكاملة في الأعمدة 4 إلى 7
+    _writeCashBoxSection(sheet, 4, cashBoxList, summary, dateFmt);
 
-    final fileBytes = excel.save();
+    // استخدام encode() بدلاً من save() لمنع تنزيل نسخة FlutterExcel الثانية!
+    final fileBytes = excel.encode();
     if (fileBytes != null) {
       final now = DateTime.now();
       await FileSaver.instance.saveFile(
@@ -407,7 +511,7 @@ class AppService {
     }
   }
 
-  /// التقرير الثاني: شامل كل برج ومشتركيه مع كافة حركاتهم التفصيلية + عمود حركات صندوق النقد
+  /// التقرير الثاني: شامل كل برج ومشتركيه مع كافة حركاتهم التفصيلية + عمود حركات صندوق النقد بتفاصيلها
   Future<void> exportFullReportWithAllTransactions() async {
     final towers = await getTowers();
     final allSubs = await getSubscribers(unpaidOnly: false);
@@ -417,80 +521,91 @@ class AppService {
         .order('created_at', ascending: false);
     final allTx = (rawTx as List).map((e) => SubscriberTransaction.fromJson(e)).toList();
     final cashBoxList = await getCashBoxTransactions();
+    final summary = await getFinancialSummary();
     final dateFmt = DateFormat('yyyy-MM-dd hh:mm a');
 
     final excel = Excel.createExcel();
-    final sheet = excel[excel.getDefaultSheet() ?? 'Sheet1'];
+    final defaultName = excel.getDefaultSheet() ?? 'Sheet1';
+    excel.rename(defaultName, 'التقرير الشامل');
+    final sheet = excel['التقرير الشامل'];
+    sheet.isRTL = true;
 
-    // --- القسم الأول (الأعمدة 0 إلى 4): الأبراج + المشتركين + كل حركاتهم ---
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0)).value =
-        TextCellValue('البرج / المشترك / الحركة');
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: 0)).value =
-        TextCellValue('الهاتف / نوع الحركة');
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: 0)).value =
-        TextCellValue('المبلغ / الرصيد المتبقي (د.ع)');
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: 0)).value =
-        TextCellValue('الملاحظات');
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: 0)).value =
-        TextCellValue('التاريخ والوقت');
+    sheet.setRowHeight(0, 28);
+    sheet.setColumnWidth(0, 28);
+    sheet.setColumnWidth(1, 18);
+    sheet.setColumnWidth(2, 26);
+    sheet.setColumnWidth(3, 28);
+    sheet.setColumnWidth(4, 24);
+    sheet.setColumnWidth(5, 5); // عمود فاصل
+
+    final mainHeaderStyle = _headerStyle('#FF1E3A8A');
+    _styleCell(sheet, 0, 0, TextCellValue('البرج / المشترك / الحركة'), mainHeaderStyle);
+    _styleCell(sheet, 1, 0, TextCellValue('الهاتف / نوع الحركة'), mainHeaderStyle);
+    _styleCell(sheet, 2, 0, TextCellValue('المبلغ / الرصيد (د.ع)'), mainHeaderStyle);
+    _styleCell(sheet, 3, 0, TextCellValue('الملاحظات'), mainHeaderStyle);
+    _styleCell(sheet, 4, 0, TextCellValue('التاريخ والوقت'), mainHeaderStyle);
 
     int leftRow = 1;
     for (var tower in towers) {
       final towerSubs = allSubs.where((s) => s.towerId == tower.id).toList();
       if (towerSubs.isEmpty) continue;
 
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: leftRow)).value =
-          TextCellValue('برج: ${tower.name}');
+      sheet.setRowHeight(leftRow, 22);
+      for (int c = 0; c <= 4; c++) {
+        _styleCell(
+          sheet,
+          c,
+          leftRow,
+          TextCellValue(c == 0 ? '📡 برج: ${tower.name}' : (c == 1 ? (tower.location ?? '') : '')),
+          _towerStyle,
+        );
+      }
       leftRow++;
 
       for (var sub in towerSubs) {
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: leftRow)).value =
-            TextCellValue('   مشترك: ${sub.fullName}');
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: leftRow)).value =
-            TextCellValue(sub.phone);
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: leftRow)).value =
-            TextCellValue('الدين: ${sub.debtAmount.toStringAsFixed(0)} | الواصل: ${sub.paidAmount.toStringAsFixed(0)}');
+        final subRowStyle = _bodyStyle(bgHex: '#FFF1F5F9', bold: true);
+        _styleCell(sheet, 0, leftRow, TextCellValue('👤 مشترك: ${sub.fullName}'), subRowStyle);
+        _styleCell(sheet, 1, leftRow, TextCellValue(sub.phone),
+            _bodyStyle(bgHex: '#FFF1F5F9', bold: true, align: HorizontalAlign.Center));
+        _styleCell(
+            sheet,
+            2,
+            leftRow,
+            TextCellValue('الدين: ${sub.debtAmount.toStringAsFixed(0)} | الواصل: ${sub.paidAmount.toStringAsFixed(0)}'),
+            _bodyStyle(bgHex: '#FFF1F5F9', fontHex: '#FF1E3A8A', bold: true));
+        _styleCell(sheet, 3, leftRow, TextCellValue(''), subRowStyle);
+        _styleCell(sheet, 4, leftRow, TextCellValue(''), subRowStyle);
         leftRow++;
 
         final subTx = allTx.where((t) => t.subscriberId == sub.id).toList();
         for (var tx in subTx) {
-          final typeText = tx.type == 'payment' ? 'تسديد واصل' : 'إضافة دين';
-          sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: leftRow)).value =
-              TextCellValue('      • حركة مالية');
-          sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: leftRow)).value =
-              TextCellValue(typeText);
-          sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: leftRow)).value =
-              TextCellValue('${tx.amount.toStringAsFixed(0)} (المتبقي: ${tx.remainingDebt.toStringAsFixed(0)})');
-          sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: leftRow)).value =
-              TextCellValue(tx.notes ?? '-');
-          sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: leftRow)).value =
-              TextCellValue(dateFmt.format(tx.createdAt.toLocal()));
+          final isPay = tx.type == 'payment';
+          final typeText = isPay ? 'تسديد واصل' : 'إضافة دين';
+          final colorHex = isPay ? '#FF16A34A' : '#FFDC2626';
+
+          _styleCell(sheet, 0, leftRow, TextCellValue('     ↳ حركة مالية'), _bodyStyle(fontHex: '#FF64748B'));
+          _styleCell(sheet, 1, leftRow, TextCellValue(typeText),
+              _bodyStyle(fontHex: colorHex, bold: true, align: HorizontalAlign.Center));
+          _styleCell(
+              sheet,
+              2,
+              leftRow,
+              TextCellValue('${tx.amount.toStringAsFixed(0)} (المتبقي: ${tx.remainingDebt.toStringAsFixed(0)})'),
+              _bodyStyle(fontHex: colorHex, bold: true));
+          _styleCell(sheet, 3, leftRow, TextCellValue(tx.notes ?? '-'), _bodyStyle(fontHex: '#FF475569'));
+          _styleCell(sheet, 4, leftRow, TextCellValue(dateFmt.format(tx.createdAt.toLocal())),
+              _bodyStyle(align: HorizontalAlign.Center));
           leftRow++;
         }
       }
       leftRow++;
     }
 
-    // --- القسم الثاني (الأعمدة 6 إلى 8): حركات صندوق النقد ---
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: 0)).value =
-        TextCellValue('حركة صندوق النقد (قيمة التسديد)');
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: 0)).value =
-        TextCellValue('المبلغ المصروف (د.ع)');
-    sheet.cell(CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: 0)).value =
-        TextCellValue('تاريخ ووقت التسديد');
+    // كتابة جدول صندوق النقد بتفاصيله الكاملة في الأعمدة 6 إلى 9
+    _writeCashBoxSection(sheet, 6, cashBoxList, summary, dateFmt);
 
-    int rightRow = 1;
-    for (var cb in cashBoxList) {
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: rightRow)).value =
-          TextCellValue(cb.title);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: rightRow)).value =
-          DoubleCellValue(cb.amount);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: rightRow)).value =
-          TextCellValue(dateFmt.format(cb.createdAt.toLocal()));
-      rightRow++;
-    }
-
-    final fileBytes = excel.save();
+    // استخدام encode() بدلاً من save() لمنع تنزيل نسخة FlutterExcel الثانية!
+    final fileBytes = excel.encode();
     if (fileBytes != null) {
       final now = DateTime.now();
       await FileSaver.instance.saveFile(
