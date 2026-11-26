@@ -479,11 +479,44 @@ class AppService {
     return (data as List).map((e) => SubscriberTransaction.fromJson(e)).toList();
   }
 
+  /// حساب إحصائية عدد المشتركين لكل نوع باقة اشتراك في فترة محددة
+  Future<Map<String, int>> getPlanSubscriberCounts({
+    DateTime? fromDate,
+    DateTime? toDate,
+  }) async {
+    final allProfitTx = await getProfitTransactions();
+    final Map<String, int> counts = {};
+
+    // قراءة كافة الباقات الحالية أولاً لتثبيتها في الإحصائية
+    final plans = await getSubscriptionPlans();
+    for (var p in plans) {
+      counts[p.name] = 0;
+    }
+
+    for (var tx in allProfitTx) {
+      final localDate = tx.createdAt.toLocal();
+
+      if (fromDate != null) {
+        final start = DateTime(fromDate.year, fromDate.month, fromDate.day, 0, 0, 0);
+        if (localDate.isBefore(start)) continue;
+      }
+      if (toDate != null) {
+        final end = DateTime(toDate.year, toDate.month, toDate.day, 23, 59, 59, 999);
+        if (localDate.isAfter(end)) continue;
+      }
+
+      final name = tx.planName ?? 'أخرى';
+      counts[name] = (counts[name] ?? 0) + 1;
+    }
+
+    return counts;
+  }
+
   Future<void> deleteSubscriber(String subscriberId) async {
     await _client.from(AppTables.subscribers).delete().eq('id', subscriberId);
   }
 
-  // ================= 6. صندوق النقد والأرشفة وتعديلها =================
+  // ================= 6. صندوق النقد والمصاريف (منع السالب وحساب الأرباح الصافية) =================
 
   Future<List<CashBoxTransaction>> getCashBoxTransactions() async {
     final data = await _client
@@ -497,6 +530,7 @@ class AppService {
   Future<void> addCashBoxPayment({
     required String title,
     required double amount,
+    String category = 'expense', // 'expense' مصاريف تشغيلية | 'payment' تسديد عادي
     String? notes,
   }) async {
     final userId = _client.auth.currentUser?.id;
@@ -518,6 +552,7 @@ class AppService {
       'user_id': userId,
       'title': title.trim(),
       'amount': amount,
+      'category': category,
       if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
     });
   }
@@ -526,6 +561,7 @@ class AppService {
     required CashBoxTransaction oldTx,
     required String newTitle,
     required double newAmount,
+    String? newCategory,
     String? newNotes,
   }) async {
     final summary = await getFinancialSummary();
@@ -541,11 +577,12 @@ class AppService {
     await _client.from('cash_box_transactions').update({
       'title': newTitle.trim(),
       'amount': newAmount,
+      'category': newCategory ?? oldTx.category,
       'notes': (newNotes == null || newNotes.trim().isEmpty) ? null : newNotes.trim(),
     }).eq('id', oldTx.id);
   }
 
-  // ================= 7. الإحصائيات المالية للرئيسية =================
+  // ================= 7. الإحصائيات المالية وصافي الربح =================
 
   Future<Map<String, double>> getFinancialSummary() async {
     final subData = await _client
@@ -562,19 +599,42 @@ class AppService {
 
     final cashBoxData = await _client
         .from('cash_box_transactions')
-        .select('amount');
+        .select('amount, category');
 
     double totalDisbursed = 0;
+    double totalExpenses = 0;
+
     for (var row in (cashBoxData as List)) {
-      totalDisbursed += (row['amount'] as num?)?.toDouble() ?? 0;
+      final amt = (row['amount'] as num?)?.toDouble() ?? 0;
+      totalDisbursed += amt;
+
+      final cat = row['category'] as String? ?? 'expense';
+      if (cat == 'expense') {
+        totalExpenses += amt; // المصاريف التشغيلية فقط (الرواتب، الإيجار...)
+      }
+    }
+
+    // حساب إجمالي أرباح الاشتراكات الكلية
+    final profitData = await _client
+        .from('subscriber_transactions')
+        .select('profit')
+        .not('profit', 'is', null);
+
+    double totalProfitsAll = 0;
+    for (var row in (profitData as List)) {
+      totalProfitsAll += (row['profit'] as num?)?.toDouble() ?? 0;
     }
 
     final netCashInBox = (totalCollected - totalDisbursed).clamp(0.0, double.infinity);
+    final netRealProfit = totalProfitsAll - totalExpenses; // الأرباح الكلية ناقص المصاريف
 
     return {
       'totalDebt': totalDebt,
       'totalCollected': totalCollected,
       'totalDisbursed': totalDisbursed,
+      'totalExpenses': totalExpenses,
+      'totalProfitsAll': totalProfitsAll,
+      'netRealProfit': netRealProfit,
       'totalPaid': netCashInBox,
     };
   }
@@ -651,43 +711,86 @@ class AppService {
     DateFormat dateFmt,
   ) {
     final cashHeaderStyle = _headerStyle('#FF0D9488');
-    sheet.setColumnWidth(startCol, 28);
-    sheet.setColumnWidth(startCol + 1, 20);
-    sheet.setColumnWidth(startCol + 2, 30);
-    sheet.setColumnWidth(startCol + 3, 24);
+    sheet.setColumnWidth(startCol, 16);
+    sheet.setColumnWidth(startCol + 1, 28);
+    sheet.setColumnWidth(startCol + 2, 20);
+    sheet.setColumnWidth(startCol + 3, 28);
+    sheet.setColumnWidth(startCol + 4, 24);
 
-    _styleCell(sheet, startCol, 0, TextCellValue('صندوق النقد (قيمة التسديد)'), cashHeaderStyle);
-    _styleCell(sheet, startCol + 1, 0, TextCellValue('المبلغ المصروف (د.ع)'), cashHeaderStyle);
-    _styleCell(sheet, startCol + 2, 0, TextCellValue('الملاحظات والتفاصيل'), cashHeaderStyle);
-    _styleCell(sheet, startCol + 3, 0, TextCellValue('التاريخ والوقت'), cashHeaderStyle);
+    _styleCell(sheet, startCol, 0, TextCellValue('النوع'), cashHeaderStyle);
+    _styleCell(sheet, startCol + 1, 0, TextCellValue('البيان / الوصف'), cashHeaderStyle);
+    _styleCell(sheet, startCol + 2, 0, TextCellValue('المبلغ (د.ع)'), cashHeaderStyle);
+    _styleCell(sheet, startCol + 3, 0, TextCellValue('الملاحظات'), cashHeaderStyle);
+    _styleCell(sheet, startCol + 4, 0, TextCellValue('التاريخ والوقت'), cashHeaderStyle);
 
     int row = 1;
     for (var cb in cashBoxList) {
       final bg = row % 2 == 0 ? '#FFF8FAFC' : null;
-      _styleCell(sheet, startCol, row, TextCellValue(cb.title), _bodyStyle(bgHex: bg, bold: true));
-      _styleCell(sheet, startCol + 1, row, DoubleCellValue(cb.amount),
+      final typeLabel = cb.isExpense ? 'مصاريف / رواتب' : 'تسديد عادي';
+      final typeColor = cb.isExpense ? '#FFDC2626' : '#FF1E3A8A';
+
+      _styleCell(sheet, startCol, row, TextCellValue(typeLabel),
+          _bodyStyle(bgHex: bg, fontHex: typeColor, bold: true, align: HorizontalAlign.Center));
+      _styleCell(sheet, startCol + 1, row, TextCellValue(cb.title), _bodyStyle(bgHex: bg, bold: true));
+      _styleCell(sheet, startCol + 2, row, DoubleCellValue(cb.amount),
           _bodyStyle(bgHex: bg, fontHex: '#FFDC2626', bold: true, align: HorizontalAlign.Center));
-      _styleCell(sheet, startCol + 2, row, TextCellValue(cb.notes ?? 'لا توجد ملاحظات'),
+      _styleCell(sheet, startCol + 3, row, TextCellValue(cb.notes ?? '-'),
           _bodyStyle(bgHex: bg, fontHex: '#FF475569'));
-      _styleCell(sheet, startCol + 3, row, TextCellValue(dateFmt.format(cb.createdAt.toLocal())),
+      _styleCell(sheet, startCol + 4, row, TextCellValue(dateFmt.format(cb.createdAt.toLocal())),
           _bodyStyle(bgHex: bg, align: HorizontalAlign.Center));
       row++;
     }
 
     row++;
     final summaryLabelStyle = _bodyStyle(bgHex: '#FFF1F5F9', bold: true);
-    _styleCell(sheet, startCol, row, TextCellValue('إجمالي الواصل من المشتركين'), summaryLabelStyle);
-    _styleCell(sheet, startCol + 1, row, DoubleCellValue(summary['totalCollected'] ?? 0),
+    _styleCell(sheet, startCol, row, TextCellValue('الواصل من المشتركين'), summaryLabelStyle);
+    _styleCell(sheet, startCol + 1, row, TextCellValue(''), summaryLabelStyle);
+    _styleCell(sheet, startCol + 2, row, DoubleCellValue(summary['totalCollected'] ?? 0),
         _bodyStyle(bgHex: '#FFF1F5F9', fontHex: '#FF16A34A', bold: true, align: HorizontalAlign.Center));
     row++;
 
-    _styleCell(sheet, startCol, row, TextCellValue('إجمالي مصروفات الصندوق'), summaryLabelStyle);
-    _styleCell(sheet, startCol + 1, row, DoubleCellValue(summary['totalDisbursed'] ?? 0),
+    _styleCell(sheet, startCol, row, TextCellValue('المصاريف التشغيلية (رواتب وغيرها)'), summaryLabelStyle);
+    _styleCell(sheet, startCol + 1, row, TextCellValue(''), summaryLabelStyle);
+    _styleCell(sheet, startCol + 2, row, DoubleCellValue(summary['totalExpenses'] ?? 0),
+        _bodyStyle(bgHex: '#FFF1F5F9', fontHex: '#FFDC2626', bold: true, align: HorizontalAlign.Center));
+    row++;
+
+    _styleCell(sheet, startCol, row, TextCellValue('إجمالي كل المنصرف من الصندوق'), summaryLabelStyle);
+    _styleCell(sheet, startCol + 1, row, TextCellValue(''), summaryLabelStyle);
+    _styleCell(sheet, startCol + 2, row, DoubleCellValue(summary['totalDisbursed'] ?? 0),
         _bodyStyle(bgHex: '#FFF1F5F9', fontHex: '#FFDC2626', bold: true, align: HorizontalAlign.Center));
     row++;
 
     _styleCell(sheet, startCol, row, TextCellValue('الصافي المتبقي بالصندوق'), _headerStyle('#FF16A34A'));
-    _styleCell(sheet, startCol + 1, row, DoubleCellValue(summary['totalPaid'] ?? 0), _headerStyle('#FF16A34A'));
+    _styleCell(sheet, startCol + 1, row, TextCellValue(''), _headerStyle('#FF16A34A'));
+    _styleCell(sheet, startCol + 2, row, DoubleCellValue(summary['totalPaid'] ?? 0), _headerStyle('#FF16A34A'));
+  }
+
+  void _writePlanCountsSection(
+    Sheet sheet,
+    int startCol,
+    Map<String, int> planCounts,
+  ) {
+    final planHeaderStyle = _headerStyle('#FF6D28D9'); // لون بنفسجي أنيق للتقارير
+    sheet.setColumnWidth(startCol, 26);
+    sheet.setColumnWidth(startCol + 1, 16);
+
+    _styleCell(sheet, startCol, 0, TextCellValue('نوع الاشتراك (الباقة)'), planHeaderStyle);
+    _styleCell(sheet, startCol + 1, 0, TextCellValue('عدد المشتركين'), planHeaderStyle);
+
+    int row = 1;
+    int totalUsers = 0;
+    for (var entry in planCounts.entries) {
+      totalUsers += entry.value;
+      final bg = row % 2 == 0 ? '#FFF8FAFC' : null;
+      _styleCell(sheet, startCol, row, TextCellValue(entry.key), _bodyStyle(bgHex: bg, bold: true));
+      _styleCell(sheet, startCol + 1, row, IntCellValue(entry.value),
+          _bodyStyle(bgHex: bg, fontHex: '#FF1E3A8A', bold: true, align: HorizontalAlign.Center));
+      row++;
+    }
+
+    _styleCell(sheet, startCol, row, TextCellValue('إجمالي كافة المشتركين'), _headerStyle('#FF1E3A8A'));
+    _styleCell(sheet, startCol + 1, row, IntCellValue(totalUsers), _headerStyle('#FF1E3A8A'));
   }
 
   Future<void> exportDebtsAndCashBoxReport() async {
@@ -696,6 +799,7 @@ class AppService {
     final profitTx = await getProfitTransactions();
     final cashBoxList = await getCashBoxTransactions();
     final summary = await getFinancialSummary();
+    final planCounts = await getPlanSubscriberCounts();
     final dateFmt = DateFormat('yyyy-MM-dd hh:mm a');
 
     final excel = Excel.createExcel();
@@ -710,14 +814,15 @@ class AppService {
     sheet.setColumnWidth(2, 24);
     sheet.setColumnWidth(3, 20);
     sheet.setColumnWidth(4, 20);
-    sheet.setColumnWidth(5, 5);
+    sheet.setColumnWidth(5, 4); // عمود فاصل
+    sheet.setColumnWidth(11, 4); // عمود فاصل ثانٍ
 
     final mainHeaderStyle = _headerStyle('#FF1E3A8A');
     _styleCell(sheet, 0, 0, TextCellValue('البرج / اسم المشترك'), mainHeaderStyle);
     _styleCell(sheet, 1, 0, TextCellValue('رقم الهاتف'), mainHeaderStyle);
     _styleCell(sheet, 2, 0, TextCellValue('اسم الاشتراك'), mainHeaderStyle);
     _styleCell(sheet, 3, 0, TextCellValue('الدين المتبقي (د.ع)'), mainHeaderStyle);
-    _styleCell(sheet, 4, 0, TextCellValue('الأرباح من المشترك (د.ع)'), mainHeaderStyle);
+    _styleCell(sheet, 4, 0, TextCellValue('أرباح المشترك (د.ع)'), mainHeaderStyle);
 
     int leftRow = 1;
     double grandTotalDebt = 0;
@@ -758,16 +863,6 @@ class AppService {
       leftRow++;
     }
 
-    double cashProfit = 0;
-    double creditProfit = 0;
-    for (var tx in profitTx) {
-      if (tx.paymentMode == 'cash') {
-        cashProfit += tx.profit ?? 0;
-      } else {
-        creditProfit += tx.profit ?? 0;
-      }
-    }
-
     _styleCell(sheet, 0, leftRow, TextCellValue('إجمالي كافة الديون المستحقة'), _headerStyle('#FFDC2626'));
     _styleCell(sheet, 1, leftRow, TextCellValue(''), _headerStyle('#FFDC2626'));
     _styleCell(sheet, 2, leftRow, TextCellValue(''), _headerStyle('#FFDC2626'));
@@ -776,20 +871,24 @@ class AppService {
     leftRow += 2;
 
     final profitSummaryLabel = _bodyStyle(bgHex: '#FFF1F5F9', bold: true);
-    _styleCell(sheet, 0, leftRow, TextCellValue('أرباح النقد (المبيعات النقدية)'), profitSummaryLabel);
-    _styleCell(sheet, 1, leftRow, DoubleCellValue(cashProfit),
+    _styleCell(sheet, 0, leftRow, TextCellValue('إجمالي أرباح الاشتراكات الكلية'), profitSummaryLabel);
+    _styleCell(sheet, 1, leftRow, DoubleCellValue(summary['totalProfitsAll'] ?? 0),
         _bodyStyle(bgHex: '#FFF1F5F9', fontHex: '#FF16A34A', bold: true, align: HorizontalAlign.Center));
     leftRow++;
 
-    _styleCell(sheet, 0, leftRow, TextCellValue('أرباح الديون (المبيعات الآجلة)'), profitSummaryLabel);
-    _styleCell(sheet, 1, leftRow, DoubleCellValue(creditProfit),
-        _bodyStyle(bgHex: '#FFF1F5F9', fontHex: '#FFD97706', bold: true, align: HorizontalAlign.Center));
+    _styleCell(sheet, 0, leftRow, TextCellValue('المصاريف التشغيلية والرواتب (-)'), profitSummaryLabel);
+    _styleCell(sheet, 1, leftRow, DoubleCellValue(summary['totalExpenses'] ?? 0),
+        _bodyStyle(bgHex: '#FFF1F5F9', fontHex: '#FFDC2626', bold: true, align: HorizontalAlign.Center));
     leftRow++;
 
-    _styleCell(sheet, 0, leftRow, TextCellValue('صافي الأرباح الكلي (نقد + آجل)'), _headerStyle('#FF1E3A8A'));
-    _styleCell(sheet, 1, leftRow, DoubleCellValue(cashProfit + creditProfit), _headerStyle('#FF1E3A8A'));
+    _styleCell(sheet, 0, leftRow, TextCellValue('صافي الربح النهائي الصافي'), _headerStyle('#FF1E3A8A'));
+    _styleCell(sheet, 1, leftRow, DoubleCellValue(summary['netRealProfit'] ?? 0), _headerStyle('#FF1E3A8A'));
 
+    // كتابة جدول صندوق النقد
     _writeCashBoxSection(sheet, 6, cashBoxList, summary, dateFmt);
+
+    // كتابة جدول عدد المشتركين لكل نوع باقة
+    _writePlanCountsSection(sheet, 12, planCounts);
 
     final fileBytes = excel.encode();
     if (fileBytes != null) {
@@ -813,6 +912,7 @@ class AppService {
     final allTx = (rawTx as List).map((e) => SubscriberTransaction.fromJson(e)).toList();
     final cashBoxList = await getCashBoxTransactions();
     final summary = await getFinancialSummary();
+    final planCounts = await getPlanSubscriberCounts();
     final dateFmt = DateFormat('yyyy-MM-dd hh:mm a');
 
     final excel = Excel.createExcel();
@@ -830,7 +930,8 @@ class AppService {
     sheet.setColumnWidth(5, 18);
     sheet.setColumnWidth(6, 26);
     sheet.setColumnWidth(7, 24);
-    sheet.setColumnWidth(8, 5);
+    sheet.setColumnWidth(8, 4); // فاصل
+    sheet.setColumnWidth(14, 4); // فاصل
 
     final mainHeaderStyle = _headerStyle('#FF1E3A8A');
     _styleCell(sheet, 0, 0, TextCellValue('البرج / المشترك / الحركة'), mainHeaderStyle);
@@ -844,8 +945,6 @@ class AppService {
 
     int leftRow = 1;
     double grandDebt = 0;
-    double cashProfit = 0;
-    double creditProfit = 0;
 
     for (var tower in towers) {
       final towerSubs = allSubs.where((s) => s.towerId == tower.id).toList();
@@ -895,14 +994,6 @@ class AppService {
         leftRow++;
 
         for (var tx in subTx) {
-          if (tx.profit != null) {
-            if (tx.paymentMode == 'cash') {
-              cashProfit += tx.profit!;
-            } else {
-              creditProfit += tx.profit!;
-            }
-          }
-
           final isPay = tx.type == 'payment' || tx.type == 'cash_subscription';
           final typeText = tx.type == 'cash_subscription'
               ? 'اشتراك نقدي'
@@ -952,20 +1043,24 @@ class AppService {
         _bodyStyle(bgHex: '#FFF1F5F9', fontHex: '#FFDC2626', bold: true, align: HorizontalAlign.Center));
     leftRow++;
 
-    _styleCell(sheet, 0, leftRow, TextCellValue('أرباح المبيعات النقدية (الكاش)'), sumStyle);
-    _styleCell(sheet, 1, leftRow, DoubleCellValue(cashProfit),
+    _styleCell(sheet, 0, leftRow, TextCellValue('إجمالي أرباح الاشتراكات الكلية'), sumStyle);
+    _styleCell(sheet, 1, leftRow, DoubleCellValue(summary['totalProfitsAll'] ?? 0),
         _bodyStyle(bgHex: '#FFF1F5F9', fontHex: '#FF16A34A', bold: true, align: HorizontalAlign.Center));
     leftRow++;
 
-    _styleCell(sheet, 0, leftRow, TextCellValue('أرباح المبيعات الآجلة (الديون)'), sumStyle);
-    _styleCell(sheet, 1, leftRow, DoubleCellValue(creditProfit),
-        _bodyStyle(bgHex: '#FFF1F5F9', fontHex: '#FFD97706', bold: true, align: HorizontalAlign.Center));
+    _styleCell(sheet, 0, leftRow, TextCellValue('المصاريف التشغيلية والرواتب (-)'), sumStyle);
+    _styleCell(sheet, 1, leftRow, DoubleCellValue(summary['totalExpenses'] ?? 0),
+        _bodyStyle(bgHex: '#FFF1F5F9', fontHex: '#FFDC2626', bold: true, align: HorizontalAlign.Center));
     leftRow++;
 
-    _styleCell(sheet, 0, leftRow, TextCellValue('صافي الأرباح الكلي (نقد + آجل)'), _headerStyle('#FF1E3A8A'));
-    _styleCell(sheet, 1, leftRow, DoubleCellValue(cashProfit + creditProfit), _headerStyle('#FF1E3A8A'));
+    _styleCell(sheet, 0, leftRow, TextCellValue('صافي الربح النهائي الصافي'), _headerStyle('#FF1E3A8A'));
+    _styleCell(sheet, 1, leftRow, DoubleCellValue(summary['netRealProfit'] ?? 0), _headerStyle('#FF1E3A8A'));
 
+    // كتابة جدول صندوق النقد
     _writeCashBoxSection(sheet, 9, cashBoxList, summary, dateFmt);
+
+    // كتابة جدول عدد المشتركين لكل نوع باقة
+    _writePlanCountsSection(sheet, 15, planCounts);
 
     final fileBytes = excel.encode();
     if (fileBytes != null) {
@@ -999,7 +1094,6 @@ class AppService {
     }).eq('id', userId);
   }
 
-  /// فحص موعد النسخ الاحتياطي التلقائي عند فتح التطبيق وتنزيل التقريرين إذا حان الموعد
   Future<bool> checkAndTriggerAutoBackup() async {
     try {
       final profile = await getProfile();

@@ -14,7 +14,7 @@ final authStateProvider = StreamProvider<AuthState>((ref) {
   return supabase.auth.onAuthStateChange;
 });
 
-// 3. مراقبة معرف المستخدم الحالي (يتغير فور تسجيل الدخول أو الخروج)
+// 3. مراقبة معرف المستخدم الحالي
 final currentUserIdProvider = Provider<String?>((ref) {
   final authState = ref.watch(authStateProvider);
   return authState.value?.session?.user.id ?? supabase.auth.currentUser?.id;
@@ -46,6 +46,9 @@ final financialSummaryProvider = FutureProvider<Map<String, double>>((ref) async
       'totalDebt': 0.0,
       'totalCollected': 0.0,
       'totalDisbursed': 0.0,
+      'totalExpenses': 0.0,
+      'totalProfitsAll': 0.0,
+      'netRealProfit': 0.0,
       'totalPaid': 0.0,
     };
   }
@@ -111,7 +114,10 @@ final subscriberTransactionsProvider =
   return await service.getSubscriberTransactions(subscriberId);
 });
 
-// 11. مزود أرشيف حركات صندوق النقد
+// 11. مزودات صندوق النقد (المصاريف والتسديدات مع حد 5 + إظهار المزيد لكل منهما)
+final cashBoxExpenseLimitProvider = StateProvider<int>((ref) => 5);
+final cashBoxPaymentLimitProvider = StateProvider<int>((ref) => 5);
+
 final cashBoxTransactionsProvider = FutureProvider<List<CashBoxTransaction>>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
   if (userId == null) return [];
@@ -138,10 +144,11 @@ final subscriptionPlansProvider = FutureProvider<List<SubscriptionPlan>>((ref) a
   return await service.getSubscriptionPlans();
 });
 
-// 14. مزودات الأرباح وحركات التفعيل وفلتر التاريخ
+// 14. مزودات الأرباح وحركات التفعيل (مع حد آخر 5 اشتراكات مباعة وزر رؤية المزيد)
 final selectedProfitTowerProvider = StateProvider<String?>((ref) => null);
 final profitFromDateProvider = StateProvider<DateTime?>((ref) => null);
 final profitToDateProvider = StateProvider<DateTime?>((ref) => null);
+final profitListLimitProvider = StateProvider<int>((ref) => 5);
 
 final profitTransactionsProvider = FutureProvider<List<SubscriberTransaction>>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
@@ -149,4 +156,22 @@ final profitTransactionsProvider = FutureProvider<List<SubscriberTransaction>>((
 
   final service = ref.watch(appServiceProvider);
   return await service.getProfitTransactions();
+});
+
+// 15. مزودات التبويب الخامس (التقارير: كم يوزر لكل باقة في الفترة المحددة)
+final reportsFromDateProvider = StateProvider<DateTime?>((ref) => null);
+final reportsToDateProvider = StateProvider<DateTime?>((ref) => null);
+
+final planSubscriberCountsProvider = FutureProvider<Map<String, int>>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) return {};
+
+  final service = ref.watch(appServiceProvider);
+  final fromDate = ref.watch(reportsFromDateProvider);
+  final toDate = ref.watch(reportsToDateProvider);
+
+  return await service.getPlanSubscriberCounts(
+    fromDate: fromDate,
+    toDate: toDate,
+  );
 });

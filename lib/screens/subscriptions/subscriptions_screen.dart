@@ -262,17 +262,21 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
     final plansAsync = ref.watch(subscriptionPlansProvider);
     final profitsAsync = ref.watch(profitTransactionsProvider);
     final towersAsync = ref.watch(towersListProvider);
+    final summaryAsync = ref.watch(financialSummaryProvider);
     final selectedTowerId = ref.watch(selectedProfitTowerProvider);
     final fromDate = ref.watch(profitFromDateProvider);
     final toDate = ref.watch(profitToDateProvider);
+    final currentLimit = ref.watch(profitListLimitProvider);
 
     final currencyFormatter = NumberFormat('#,##0', 'en_US');
     final dateFormatter = DateFormat('yyyy/MM/dd - hh:mm a');
     final shortDateFmt = DateFormat('yyyy/MM/dd');
 
+    final totalExpenses = summaryAsync.value?['totalExpenses'] ?? 0.0;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('الاشتراكات والأرباح'),
+        title: const Text('الاشتراكات والأرباح الكلية'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, size: 22),
@@ -280,6 +284,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
               ref.invalidate(subscriptionPlansProvider);
               ref.invalidate(profitTransactionsProvider);
               ref.invalidate(towersListProvider);
+              ref.invalidate(financialSummaryProvider);
             },
           ),
         ],
@@ -289,6 +294,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
           ref.invalidate(subscriptionPlansProvider);
           ref.invalidate(profitTransactionsProvider);
           ref.invalidate(towersListProvider);
+          ref.invalidate(financialSummaryProvider);
         },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -461,12 +467,12 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
 
               const SizedBox(height: 22),
 
-              // ================= القسم 2: تقارير الأرباح والمبيعات مع فلتر التاريخ =================
+              // ================= القسم 2: الأرباح الكلية مع فلتر التاريخ =================
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
-                    'تقارير الأرباح والمبيعات',
+                    'الأرباح الكلية والمبيعات',
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                   ),
                   towersAsync.when(
@@ -499,7 +505,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
               ),
               const SizedBox(height: 8),
 
-              // شريط فلترة التاريخ (من تاريخ -> إلى تاريخ)
+              // شريط فلترة التاريخ
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -638,7 +644,6 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
 
               profitsAsync.when(
                 data: (allProfits) {
-                  // تطبيق فلترة البرج + فلترة التاريخ (من - إلى)
                   final filtered = allProfits.where((tx) {
                     if (selectedTowerId != null && tx.towerId != selectedTowerId) {
                       return false;
@@ -656,12 +661,11 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                     return true;
                   }).toList();
 
-                  double cashProfit = 0;
-                  double creditProfit = 0;
+                  double totalGrossProfit = 0;
                   double totalSales = 0;
                   double totalCost = 0;
 
-                  final Map<String, Map<String, double>> towerProfitsMap = {};
+                  final Map<String, double> towerProfitsMap = {};
 
                   for (var tx in filtered) {
                     final prof = tx.profit ?? 0;
@@ -670,107 +674,126 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
 
                     totalSales += sell;
                     totalCost += cost;
-
-                    if (tx.paymentMode == 'cash') {
-                      cashProfit += prof;
-                    } else {
-                      creditProfit += prof;
-                    }
+                    totalGrossProfit += prof;
 
                     final tName = tx.towerName ?? 'برج غير محدد';
-                    towerProfitsMap.putIfAbsent(tName, () => {'cash': 0, 'credit': 0, 'total': 0});
-                    if (tx.paymentMode == 'cash') {
-                      towerProfitsMap[tName]!['cash'] = towerProfitsMap[tName]!['cash']! + prof;
-                    } else {
-                      towerProfitsMap[tName]!['credit'] = towerProfitsMap[tName]!['credit']! + prof;
-                    }
-                    towerProfitsMap[tName]!['total'] = towerProfitsMap[tName]!['total']! + prof;
+                    towerProfitsMap[tName] = (towerProfitsMap[tName] ?? 0) + prof;
                   }
 
-                  final totalProfit = cashProfit + creditProfit;
+                  // صافي الربح الحقيقي بعد استقطاع المصاريف التشغيلية والرواتب
+                  final finalNetProfit = totalGrossProfit - totalExpenses;
+
+                  // أخذ آخر 5 فقط مع دعم "رؤية المزيد"
+                  final visibleProfits = filtered.take(currentLimit).toList();
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildProfitCard(
-                              title: 'أرباح النقد (الكاش)',
-                              amount: '${currencyFormatter.format(cashProfit)} د.ع',
-                              icon: Icons.payments_outlined,
-                              color: AppColors.paidGreen,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _buildProfitCard(
-                              title: 'أرباح الديون (الآجل)',
-                              amount: '${currencyFormatter.format(creditProfit)} د.ع',
-                              icon: Icons.schedule,
-                              color: const Color(0xFFD97706),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-
+                      // بطاقة موحدة للأرباح الكلية وصافي الربح
                       Container(
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(18),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
-                            colors: [AppColors.primary, Color(0xFF2563EB)],
+                            colors: [AppColors.primary, Color(0xFF1E40AF)],
+                            begin: Alignment.topRight,
+                            end: Alignment.bottomLeft,
                           ),
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(18),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.25),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            const Row(
                               children: [
-                                const Text(
-                                  'صافي الربح للفترة:',
-                                  style: TextStyle(color: Colors.white70, fontSize: 14),
-                                ),
+                                Icon(Icons.monetization_on, color: Colors.white70, size: 22),
+                                SizedBox(width: 8),
                                 Text(
-                                  '${currencyFormatter.format(totalProfit)} د.ع',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                                  'إجمالي أرباح الاشتراكات الكلية',
+                                  style: TextStyle(color: Colors.white70, fontSize: 13),
                                 ),
                               ],
                             ),
-                            const Divider(color: Colors.white24, height: 18),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'إجمالي البيع: ${currencyFormatter.format(totalSales)} د.ع',
-                                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                                ),
-                                Text(
-                                  'كلفة الشركة: ${currencyFormatter.format(totalCost)} د.ع',
-                                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                                ),
-                              ],
+                            const SizedBox(height: 8),
+                            Text(
+                              '${currencyFormatter.format(totalGrossProfit)} د.ع',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'إجمالي المبيعات: ${currencyFormatter.format(totalSales)} د.ع',
+                                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                                      ),
+                                      Text(
+                                        'كلفة الشركة: ${currencyFormatter.format(totalCost)} د.ع',
+                                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
+                                  const Divider(color: Colors.white24, height: 16),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.work_history, size: 14, color: Colors.amberAccent),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'المصاريف والرواتب: -${currencyFormatter.format(totalExpenses)} د.ع',
+                                            style: const TextStyle(color: Colors.amberAccent, fontSize: 11),
+                                          ),
+                                        ],
+                                      ),
+                                      Text(
+                                        'الصافي: ${currencyFormatter.format(finalNetProfit)} د.ع',
+                                        style: TextStyle(
+                                          color: finalNetProfit >= 0 ? AppColors.paidGreen : AppColors.debtRed,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
                       ),
 
+                      // ملخص أرباح كل برج
                       if (selectedTowerId == null && towerProfitsMap.isNotEmpty) ...[
                         const SizedBox(height: 18),
                         const Text(
-                          'ملخص أرباح كل برج:',
+                          'أرباح كل برج:',
                           style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 8),
                         ...towerProfitsMap.entries.map((entry) {
                           return Container(
                             margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(12),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(12),
@@ -789,22 +812,13 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                                     ),
                                   ],
                                 ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      'الربح: ${currencyFormatter.format(entry.value['total'])} د.ع',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.primary,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                    Text(
-                                      'نقد: ${currencyFormatter.format(entry.value['cash'])} | آجل: ${currencyFormatter.format(entry.value['credit'])}',
-                                      style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                                    ),
-                                  ],
+                                Text(
+                                  'الربح: ${currencyFormatter.format(entry.value)} د.ع',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.primary,
+                                    fontSize: 14,
+                                  ),
                                 ),
                               ],
                             ),
@@ -813,6 +827,8 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                       ],
 
                       const SizedBox(height: 20),
+
+                      // ================= سجل الاشتراكات المباعة (آخر 5 + زر المزيد) =================
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -821,14 +837,14 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                             style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                           ),
                           Text(
-                            '(${filtered.length} عملية)',
-                            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                            'المعروض: ${visibleProfits.length} من ${filtered.length}',
+                            style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
                           ),
                         ],
                       ),
                       const SizedBox(height: 8),
 
-                      if (filtered.isEmpty)
+                      if (visibleProfits.isEmpty)
                         Container(
                           padding: const EdgeInsets.all(28),
                           decoration: BoxDecoration(
@@ -843,14 +859,14 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                             ),
                           ),
                         )
-                      else
+                      else ...[
                         ListView.separated(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
-                          itemCount: filtered.length,
+                          itemCount: visibleProfits.length,
                           separatorBuilder: (_, __) => const SizedBox(height: 8),
                           itemBuilder: (ctx, idx) {
-                            final item = filtered[idx];
+                            final item = visibleProfits[idx];
                             final isCash = item.paymentMode == 'cash';
                             final badgeColor = isCash ? AppColors.paidGreen : const Color(0xFFD97706);
 
@@ -880,7 +896,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                                           borderRadius: BorderRadius.circular(8),
                                         ),
                                         child: Text(
-                                          isCash ? 'نقد للصندوق' : 'آجل للدين',
+                                          isCash ? 'نقد' : 'آجل',
                                           style: TextStyle(
                                             fontSize: 11,
                                             fontWeight: FontWeight.bold,
@@ -912,7 +928,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
-                                        'كلفة الشركة: ${currencyFormatter.format(item.costPrice ?? 0)} | البيع: ${currencyFormatter.format(item.sellingPrice ?? 0)}',
+                                        'كلفة: ${currencyFormatter.format(item.costPrice ?? 0)} | بيع: ${currencyFormatter.format(item.sellingPrice ?? 0)}',
                                         style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
                                       ),
                                       Text(
@@ -926,6 +942,22 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                             );
                           },
                         ),
+                        // زر رؤية المزيد (عرض 5 إضافية)
+                        if (filtered.length > currentLimit)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: TextButton.icon(
+                              icon: const Icon(Icons.keyboard_arrow_down, size: 20),
+                              label: Text(
+                                'رؤية المزيد (عرض 5 إضافية)',
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              onPressed: () {
+                                ref.read(profitListLimitProvider.notifier).update((v) => v + 5);
+                              },
+                            ),
+                          ),
+                      ],
                     ],
                   );
                 },
@@ -935,42 +967,6 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildProfitCard({
-    required String title,
-    required String amount,
-    required IconData icon,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: 16,
-            backgroundColor: color.withValues(alpha: 0.12),
-            child: Icon(icon, color: color, size: 17),
-          ),
-          const SizedBox(height: 10),
-          Text(title, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-          const SizedBox(height: 4),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              amount,
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color),
-            ),
-          ),
-        ],
       ),
     );
   }

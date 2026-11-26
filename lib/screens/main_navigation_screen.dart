@@ -6,6 +6,7 @@ import '../providers/app_providers.dart';
 import 'home/home_screen.dart';
 import 'towers/towers_screen.dart';
 import 'subscriptions/subscriptions_screen.dart';
+import 'reports/reports_screen.dart';
 import 'profile/profile_screen.dart';
 
 class MainNavigationScreen extends ConsumerStatefulWidget {
@@ -22,13 +23,13 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     HomeScreen(),
     TowersScreen(),
     SubscriptionsScreen(),
+    ReportsScreen(),
     ProfileScreen(),
   ];
 
   @override
   void initState() {
     super.initState();
-    // فحص النسخ الاحتياطي التلقائي عند فتح التطبيق
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _runAutoBackupCheck();
     });
@@ -98,6 +99,11 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
               icon: Icon(Icons.monetization_on_outlined, color: AppColors.textSecondary),
               selectedIcon: Icon(Icons.monetization_on, color: AppColors.primary),
               label: 'الأرباح',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.bar_chart_outlined, color: AppColors.textSecondary),
+              selectedIcon: Icon(Icons.bar_chart, color: AppColors.primary),
+              label: 'التقارير',
             ),
             NavigationDestination(
               icon: Icon(Icons.person_outline, color: AppColors.textSecondary),

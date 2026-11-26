@@ -9,15 +9,16 @@ import '../../providers/app_providers.dart';
 class CashBoxScreen extends ConsumerWidget {
   const CashBoxScreen({super.key});
 
-  Future<void> _showNewCashPaymentDialog(
+  Future<void> _showNewCashDialog(
     BuildContext context,
     WidgetRef ref,
-    double availableCash,
-  ) async {
+    double availableCash, {
+    required bool isExpense, // true = مصاريف (رواتب وغيرها) | false = تسديد عادي
+  }) async {
     if (availableCash <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('رصيد صندوق النقد صفر، لا يوجد نقد متاح للتسديد!'),
+          content: Text('رصيد صندوق النقد صفر، لا يوجد نقد متاح للصرف!'),
           backgroundColor: AppColors.debtRed,
         ),
       );
@@ -59,11 +60,14 @@ class CashBoxScreen extends ConsumerWidget {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.payments_outlined, color: AppColors.primary),
+                        Icon(
+                          isExpense ? Icons.work_history_outlined : Icons.payments_outlined,
+                          color: isExpense ? AppColors.debtRed : AppColors.primary,
+                        ),
                         const SizedBox(width: 8),
-                        const Text(
-                          'تسديد من صندوق النقد',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        Text(
+                          isExpense ? 'تسجيل مصاريف (رواتب / تشغيل)' : 'تسديد من صندوق النقد',
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                         ),
                         const Spacer(),
                         IconButton(
@@ -72,7 +76,30 @@ class CashBoxScreen extends ConsumerWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
+
+                    if (isExpense)
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(
+                          color: AppColors.debtRed.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.debtRed.withValues(alpha: 0.2)),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.info_outline, size: 16, color: AppColors.debtRed),
+                            SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'تنبيه: سيتم استقطاع هذا المبلغ من صندوق النقد ويُخصم تلقائياً من صافي الأرباح.',
+                                style: TextStyle(fontSize: 11, color: AppColors.debtRed),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
 
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -103,7 +130,7 @@ class CashBoxScreen extends ConsumerWidget {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text('المتبقي بعد التسديد:', style: TextStyle(fontSize: 12)),
+                                const Text('المتبقي بعد الصرف:', style: TextStyle(fontSize: 12)),
                                 Text(
                                   isExceeded
                                       ? 'يتجاوز الرصيد المتاح!'
@@ -124,12 +151,16 @@ class CashBoxScreen extends ConsumerWidget {
 
                     TextFormField(
                       controller: titleController,
-                      decoration: const InputDecoration(
-                        labelText: 'قيمة التسديد (الوصف / الجهة) *',
-                        hintText: 'مثال: تسديد المزود الرئيسي، شراء راوتر، صيانة...',
-                        prefixIcon: Icon(Icons.description_outlined),
+                      decoration: InputDecoration(
+                        labelText: isExpense
+                            ? 'بند المصروف (مثال: راتب مهندس، وقود، إيجار...) *'
+                            : 'قيمة التسديد (الوصف / الجهة) *',
+                        prefixIcon: Icon(isExpense ? Icons.badge_outlined : Icons.description_outlined),
                       ),
-                      validator: (v) => AppValidators.validateRequired(v, 'قيمة التسديد أو الوصف'),
+                      validator: (v) => AppValidators.validateRequired(
+                        v,
+                        isExpense ? 'بند المصروف' : 'قيمة التسديد',
+                      ),
                     ),
                     const SizedBox(height: 12),
 
@@ -165,6 +196,9 @@ class CashBoxScreen extends ConsumerWidget {
                     const SizedBox(height: 20),
 
                     ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isExpense ? AppColors.debtRed : AppColors.secondary,
+                      ),
                       onPressed: isLoading
                           ? null
                           : () async {
@@ -175,6 +209,7 @@ class CashBoxScreen extends ConsumerWidget {
                                 await ref.read(appServiceProvider).addCashBoxPayment(
                                       title: titleController.text,
                                       amount: amount,
+                                      category: isExpense ? 'expense' : 'payment',
                                       notes: notesController.text,
                                     );
 
@@ -201,7 +236,7 @@ class CashBoxScreen extends ConsumerWidget {
                               width: 20,
                               child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                             )
-                          : const Text('تأكيد وحفظ التسديد'),
+                          : Text(isExpense ? 'تأكيد وحفظ المصاريف' : 'تأكيد وحفظ التسديد'),
                     ),
                   ],
                 ),
@@ -213,7 +248,6 @@ class CashBoxScreen extends ConsumerWidget {
     );
   }
 
-  /// نافذة تعديل حركة تسديد سابقة في صندوق النقد
   Future<void> _showEditCashPaymentDialog(
     BuildContext context,
     WidgetRef ref,
@@ -259,9 +293,9 @@ class CashBoxScreen extends ConsumerWidget {
                       children: [
                         const Icon(Icons.edit_outlined, color: AppColors.secondary),
                         const SizedBox(width: 8),
-                        const Text(
-                          'تعديل تسديد من الصندوق',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        Text(
+                          tx.isExpense ? 'تعديل حركة المصاريف' : 'تعديل حركة التسديد',
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                         ),
                         const Spacer(),
                         IconButton(
@@ -321,10 +355,10 @@ class CashBoxScreen extends ConsumerWidget {
                     TextFormField(
                       controller: titleController,
                       decoration: const InputDecoration(
-                        labelText: 'قيمة التسديد (الوصف / الجهة) *',
+                        labelText: 'البيان / الوصف *',
                         prefixIcon: Icon(Icons.description_outlined),
                       ),
-                      validator: (v) => AppValidators.validateRequired(v, 'قيمة التسديد أو الوصف'),
+                      validator: (v) => AppValidators.validateRequired(v, 'البيان أو الوصف'),
                     ),
                     const SizedBox(height: 12),
 
@@ -401,7 +435,7 @@ class CashBoxScreen extends ConsumerWidget {
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text('تم تعديل حركة الصندوق بنجاح'),
+                                      content: Text('تم تعديل الحركة بنجاح'),
                                       backgroundColor: AppColors.paidGreen,
                                     ),
                                   );
@@ -434,21 +468,115 @@ class CashBoxScreen extends ConsumerWidget {
     );
   }
 
+  Widget _buildTransactionTile(
+    BuildContext context,
+    WidgetRef ref,
+    CashBoxTransaction tx,
+    double netCash,
+    NumberFormat currencyFormatter,
+    DateFormat dateFormatter,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: tx.isExpense
+                    ? AppColors.debtRed.withValues(alpha: 0.1)
+                    : AppColors.primary.withValues(alpha: 0.1),
+                child: Icon(
+                  tx.isExpense ? Icons.north_east : Icons.payments_outlined,
+                  color: tx.isExpense ? AppColors.debtRed : AppColors.primary,
+                  size: 16,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tx.title,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        const Icon(Icons.access_time, size: 12, color: AppColors.textSecondary),
+                        const SizedBox(width: 4),
+                        Text(
+                          dateFormatter.format(tx.createdAt.toLocal()),
+                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '- ${currencyFormatter.format(tx.amount)} د.ع',
+                style: TextStyle(
+                  color: tx.isExpense ? AppColors.debtRed : AppColors.primary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: 'تعديل الحركة',
+                icon: const Icon(Icons.edit_outlined, size: 18, color: AppColors.secondary),
+                onPressed: () => _showEditCashPaymentDialog(context, ref, tx, netCash),
+              ),
+            ],
+          ),
+          if (tx.notes != null && tx.notes!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                'ملاحظة: ${tx.notes!}',
+                style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final summaryAsync = ref.watch(financialSummaryProvider);
     final transactionsAsync = ref.watch(cashBoxTransactionsProvider);
+    final expenseLimit = ref.watch(cashBoxExpenseLimitProvider);
+    final paymentLimit = ref.watch(cashBoxPaymentLimitProvider);
+
     final currencyFormatter = NumberFormat('#,##0', 'en_US');
     final dateFormatter = DateFormat('yyyy/MM/dd - hh:mm a');
 
     final netCash = summaryAsync.value?['totalPaid'] ?? 0.0;
     final totalCollected = summaryAsync.value?['totalCollected'] ?? 0.0;
+    final totalExpenses = summaryAsync.value?['totalExpenses'] ?? 0.0;
     final totalDisbursed = summaryAsync.value?['totalDisbursed'] ?? 0.0;
     final bool hasCash = netCash > 0;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('صندوق النقد والأرشفة'),
+        title: const Text('صندوق النقد والمصاريف'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, size: 22),
@@ -472,7 +600,7 @@ class CashBoxScreen extends ConsumerWidget {
             children: [
               // 1. بطاقة رصيد الصندوق الكلي
               Container(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
                     colors: [AppColors.primary, Color(0xFF2563EB)],
@@ -493,26 +621,26 @@ class CashBoxScreen extends ConsumerWidget {
                   children: [
                     const Row(
                       children: [
-                        Icon(Icons.account_balance_wallet, color: Colors.white70, size: 22),
+                        Icon(Icons.account_balance_wallet, color: Colors.white70, size: 20),
                         SizedBox(width: 8),
                         Text(
                           'الصافي المتوفر في صندوق النقد',
-                          style: TextStyle(color: Colors.white70, fontSize: 14),
+                          style: TextStyle(color: Colors.white70, fontSize: 13),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     Text(
                       '${currencyFormatter.format(netCash)} د.ع',
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 28,
+                        fontSize: 26,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(12),
@@ -528,7 +656,22 @@ class CashBoxScreen extends ConsumerWidget {
                               Text(
                                 '${currencyFormatter.format(totalCollected)} د.ع',
                                 style: const TextStyle(
-                                    color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                    color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                          Container(height: 24, width: 1, color: Colors.white24),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              const Text('المصاريف والرواتب',
+                                  style: TextStyle(color: Colors.white70, fontSize: 11)),
+                              Text(
+                                '${currencyFormatter.format(totalExpenses)} د.ع',
+                                style: const TextStyle(
+                                    color: Colors.amberAccent,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12),
                               ),
                             ],
                           ),
@@ -536,14 +679,12 @@ class CashBoxScreen extends ConsumerWidget {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              const Text('إجمالي تسديدات الصندوق',
+                              const Text('إجمالي المنصرف',
                                   style: TextStyle(color: Colors.white70, fontSize: 11)),
                               Text(
                                 '${currencyFormatter.format(totalDisbursed)} د.ع',
                                 style: const TextStyle(
-                                    color: Colors.amberAccent,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13),
+                                    color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
                               ),
                             ],
                           ),
@@ -554,172 +695,200 @@ class CashBoxScreen extends ConsumerWidget {
                 ),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
 
-              // 2. زر التسديد من الصندوق
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: hasCash ? AppColors.secondary : Colors.grey.shade400,
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                ),
-                icon: Icon(
-                  hasCash ? Icons.payment : Icons.money_off,
-                  color: Colors.white,
-                ),
-                label: Text(
-                  hasCash
-                      ? 'تسديد (صرف من الصندوق)'
-                      : 'لا يوجد نقد متاح للتسديد (الرصيد صفر)',
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                ),
-                onPressed: hasCash
-                    ? () => _showNewCashPaymentDialog(context, ref, netCash)
-                    : () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('رصيد صندوق النقد صفر، لا يمكن التسديد حتى يتوفر نقد'),
-                            backgroundColor: AppColors.debtRed,
-                          ),
-                        );
-                      },
-              ),
-
-              const SizedBox(height: 24),
-
-              // 3. أرشيف التسديدات بالتواريخ والأوقات (مع زر التعديل)
-              const Row(
+              // 2. زرين واضحين: زر مصاريف (رواتب) + زر تسديد عادي
+              Row(
                 children: [
-                  Icon(Icons.archive_outlined, color: AppColors.primary),
-                  SizedBox(width: 8),
-                  Text(
-                    'أرشيف تسديدات الصندوق',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: hasCash ? AppColors.debtRed : Colors.grey.shade400,
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.work_history_outlined, color: Colors.white, size: 18),
+                      label: const Text(
+                        'مصاريف (رواتب)',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                      onPressed: hasCash
+                          ? () => _showNewCashDialog(context, ref, netCash, isExpense: true)
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: hasCash ? AppColors.secondary : Colors.grey.shade400,
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.payment, color: Colors.white, size: 18),
+                      label: const Text(
+                        'تسديد عادي',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                      onPressed: hasCash
+                          ? () => _showNewCashDialog(context, ref, netCash, isExpense: false)
+                          : null,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
 
+              const SizedBox(height: 22),
+
+              // ================= 3. فصل حركات المصاريف والتسديد في منتصف الشاشة =================
               transactionsAsync.when(
-                data: (items) {
-                  if (items.isEmpty) {
-                    return Container(
-                      padding: const EdgeInsets.all(32),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: const Column(
+                data: (allItems) {
+                  final expenseList = allItems.where((tx) => tx.isExpense).toList();
+                  final paymentList = allItems.where((tx) => !tx.isExpense).toList();
+
+                  final visibleExpenses = expenseList.take(expenseLimit).toList();
+                  final visiblePayments = paymentList.take(paymentLimit).toList();
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // --- القسم الأول: حركات المصاريف والرواتب (آخر 5 + زر المزيد) ---
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Icon(Icons.receipt_long_outlined, size: 48, color: AppColors.textSecondary),
-                          SizedBox(height: 12),
+                          Row(
+                            children: [
+                              const Icon(Icons.work_history, size: 18, color: AppColors.debtRed),
+                              const SizedBox(width: 6),
+                              const Text(
+                                'حركات المصاريف والرواتب',
+                                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
                           Text(
-                            'لا توجد تسديدات مؤرشفة في الصندوق بعد',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                            'المعروض: ${visibleExpenses.length} من ${expenseList.length}',
+                            style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
                           ),
                         ],
                       ),
-                    );
-                  }
+                      const SizedBox(height: 8),
 
-                  return ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (ctx, index) {
-                      final tx = items[index];
-                      return Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 18,
-                                  backgroundColor: AppColors.debtRed.withValues(alpha: 0.1),
-                                  child: const Icon(Icons.north_east,
-                                      color: AppColors.debtRed, size: 18),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        tx.title,
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.bold, fontSize: 15),
-                                      ),
-                                      const SizedBox(height: 3),
-                                      Row(
-                                        children: [
-                                          const Icon(Icons.access_time,
-                                              size: 13, color: AppColors.textSecondary),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            dateFormatter.format(tx.createdAt.toLocal()),
-                                            style: const TextStyle(
-                                                fontSize: 12, color: AppColors.textSecondary),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Text(
-                                  '- ${currencyFormatter.format(tx.amount)} د.ع',
-                                  style: const TextStyle(
-                                    color: AppColors.debtRed,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                IconButton(
-                                  tooltip: 'تعديل حركة الصندوق',
-                                  icon: const Icon(
-                                    Icons.edit_outlined,
-                                    size: 19,
-                                    color: AppColors.secondary,
-                                  ),
-                                  onPressed: () =>
-                                      _showEditCashPaymentDialog(context, ref, tx, netCash),
-                                ),
-                              ],
+                      if (visibleExpenses.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'لا توجد حركات مصاريف ورواتب مسجلة بعد',
+                              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
                             ),
-                            if (tx.notes != null && tx.notes!.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: AppColors.background,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  'ملاحظة: ${tx.notes!}',
-                                  style: const TextStyle(
-                                      fontSize: 12, color: AppColors.textSecondary),
-                                ),
+                          ),
+                        )
+                      else ...[
+                        ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: visibleExpenses.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (ctx, i) => _buildTransactionTile(
+                            context,
+                            ref,
+                            visibleExpenses[i],
+                            netCash,
+                            currencyFormatter,
+                            dateFormatter,
+                          ),
+                        ),
+                        if (expenseList.length > expenseLimit)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: TextButton.icon(
+                              icon: const Icon(Icons.keyboard_arrow_down, size: 18),
+                              label: const Text('إظهار 5 مصاريف إضافية'),
+                              onPressed: () {
+                                ref.read(cashBoxExpenseLimitProvider.notifier).update((v) => v + 5);
+                              },
+                            ),
+                          ),
+                      ],
+
+                      const SizedBox(height: 24),
+
+                      // --- القسم الثاني: حركات التسديدات العادية (آخر 5 + زر المزيد) ---
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.payments, size: 18, color: AppColors.primary),
+                              const SizedBox(width: 6),
+                              const Text(
+                                'حركات التسديدات العادية',
+                                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                               ),
                             ],
-                          ],
+                          ),
+                          Text(
+                            'المعروض: ${visiblePayments.length} من ${paymentList.length}',
+                            style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+
+                      if (visiblePayments.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'لا توجد تسديدات عادية مسجلة بعد',
+                              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                            ),
+                          ),
+                        )
+                      else ...[
+                        ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: visiblePayments.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (ctx, i) => _buildTransactionTile(
+                            context,
+                            ref,
+                            visiblePayments[i],
+                            netCash,
+                            currencyFormatter,
+                            dateFormatter,
+                          ),
                         ),
-                      );
-                    },
+                        if (paymentList.length > paymentLimit)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: TextButton.icon(
+                              icon: const Icon(Icons.keyboard_arrow_down, size: 18),
+                              label: const Text('إظهار 5 تسديدات إضافية'),
+                              onPressed: () {
+                                ref.read(cashBoxPaymentLimitProvider.notifier).update((v) => v + 5);
+                              },
+                            ),
+                          ),
+                      ],
+                    ],
                   );
                 },
                 loading: () => const Center(
                   child: Padding(
-                    padding: EdgeInsets.all(24.0),
+                    padding: EdgeInsets.all(32.0),
                     child: CircularProgressIndicator(),
                   ),
                 ),

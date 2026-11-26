@@ -5,8 +5,8 @@ class UserProfile {
   final String phone;
   final String role;
   final String? passcode;
-  final int backupIntervalDays; // كل كم يوم يتم أخذ نسخة احتياطية (0 = متوقف)
-  final DateTime? lastBackupAt; // تاريخ آخر نسخة احتياطية
+  final int backupIntervalDays;
+  final DateTime? lastBackupAt;
   final DateTime createdAt;
 
   UserProfile({
@@ -303,12 +303,13 @@ class SubscriberTransaction {
   }
 }
 
-// 6. نموذج حركات صندوق النقد (Cash Box Transaction)
+// 6. نموذج حركات صندوق النقد (مع التصنيف: مصاريف أو تسديد)
 class CashBoxTransaction {
   final String id;
   final String userId;
   final String title;
   final double amount;
+  final String category; // 'expense' (مصاريف تشغيلية) أو 'payment' (تسديد عادي)
   final String? notes;
   final DateTime createdAt;
 
@@ -317,9 +318,12 @@ class CashBoxTransaction {
     required this.userId,
     required this.title,
     required this.amount,
+    this.category = 'expense',
     this.notes,
     required this.createdAt,
   });
+
+  bool get isExpense => category == 'expense';
 
   factory CashBoxTransaction.fromJson(Map<String, dynamic> json) {
     return CashBoxTransaction(
@@ -327,6 +331,7 @@ class CashBoxTransaction {
       userId: json['user_id'] as String,
       title: json['title'] as String? ?? '',
       amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
+      category: json['category'] as String? ?? 'expense',
       notes: json['notes'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
@@ -337,6 +342,7 @@ class CashBoxTransaction {
       'user_id': userId,
       'title': title,
       'amount': amount,
+      'category': category,
       if (notes != null) 'notes': notes,
     };
   }

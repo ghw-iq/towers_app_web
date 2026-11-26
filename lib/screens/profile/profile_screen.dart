@@ -55,23 +55,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ref.invalidate(profileProvider);
       setState(() => _isEditing = false);
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تم تحديث البيانات بنجاح'),
-            backgroundColor: AppColors.paidGreen,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم تحديث البيانات بنجاح'),
+          backgroundColor: AppColors.paidGreen,
+        ),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('فشل حفظ البيانات: $e'),
-            backgroundColor: AppColors.debtRed,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('فشل حفظ البيانات: $e'),
+          backgroundColor: AppColors.debtRed,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -81,6 +79,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final text = _intervalController.text.trim();
     final days = int.tryParse(text);
     if (days == null || days < 0) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('يرجى إدخال عدد أيام صحيح (0 أو أكثر)'),
@@ -94,24 +93,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     try {
       await ref.read(appServiceProvider).updateBackupInterval(days);
       ref.invalidate(profileProvider);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              days == 0
-                  ? 'تم إيقاف النسخ الاحتياطي التلقائي'
-                  : 'سيتم أخذ نسخة احتياطية للإكسل تلقائياً كل $days يوم/أيام',
-            ),
-            backgroundColor: AppColors.paidGreen,
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            days == 0
+                ? 'تم إيقاف النسخ الاحتياطي التلقائي'
+                : 'سيتم أخذ نسخة احتياطية للإكسل تلقائياً كل $days يوم/أيام',
           ),
-        );
-      }
+          backgroundColor: AppColors.paidGreen,
+        ),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('خطأ: $e'), backgroundColor: AppColors.debtRed),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('خطأ: $e'), backgroundColor: AppColors.debtRed),
+      );
     } finally {
       if (mounted) setState(() => _isSavingInterval = false);
     }
@@ -125,29 +122,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       await ref.read(appServiceProvider).updateLastBackupTimestamp();
       ref.invalidate(profileProvider);
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 8),
-                Text('تم تنزيل النسختين الاحتياطيتين بنجاح'),
-              ],
-            ),
-            backgroundColor: AppColors.paidGreen,
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 8),
+              Text('تم تنزيل النسختين الاحتياطيتين بنجاح'),
+            ],
           ),
-        );
-      }
+          backgroundColor: AppColors.paidGreen,
+        ),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('فشل النسخ الاحتياطي: $e'),
-            backgroundColor: AppColors.debtRed,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('فشل النسخ الاحتياطي: $e'),
+          backgroundColor: AppColors.debtRed,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isExportingManual = false);
     }
@@ -157,29 +152,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     setState(() => _isExportingReport1 = true);
     try {
       await ref.read(appServiceProvider).exportDebtsAndCashBoxReport();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 8),
-                Text('تم تنزيل تقرير الديون والصندوق بنجاح'),
-              ],
-            ),
-            backgroundColor: AppColors.paidGreen,
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 8),
+              Text('تم تنزيل تقرير الديون والصندوق بنجاح'),
+            ],
           ),
-        );
-      }
+          backgroundColor: AppColors.paidGreen,
+        ),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('فشل تصدير التقرير الأول: $e'),
-            backgroundColor: AppColors.debtRed,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('فشل تصدير التقرير الأول: $e'),
+          backgroundColor: AppColors.debtRed,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isExportingReport1 = false);
     }
@@ -189,29 +182,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     setState(() => _isExportingReport2 = true);
     try {
       await ref.read(appServiceProvider).exportFullReportWithAllTransactions();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 8),
-                Text('تم تنزيل التقرير الشامل بكافة الحركات بنجاح'),
-              ],
-            ),
-            backgroundColor: AppColors.paidGreen,
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 8),
+              Text('تم تنزيل التقرير الشامل بكافة الحركات بنجاح'),
+            ],
           ),
-        );
-      }
+          backgroundColor: AppColors.paidGreen,
+        ),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('فشل تصدير التقرير الثاني: $e'),
-            backgroundColor: AppColors.debtRed,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('فشل تصدير التقرير الثاني: $e'),
+          backgroundColor: AppColors.debtRed,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isExportingReport2 = false);
     }
@@ -249,20 +240,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               try {
                 await ref.read(appServiceProvider).updatePassword(passwordController.text);
                 if (ctx.mounted) Navigator.pop(ctx);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('تم تغيير كلمة السر بنجاح'),
-                      backgroundColor: AppColors.paidGreen,
-                    ),
-                  );
-                }
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('تم تغيير كلمة السر بنجاح'),
+                    backgroundColor: AppColors.paidGreen,
+                  ),
+                );
               } catch (e) {
-                if (ctx.mounted) {
-                  ScaffoldMessenger.of(ctx).showSnackBar(
-                    SnackBar(content: Text('خطأ: $e'), backgroundColor: AppColors.debtRed),
-                  );
-                }
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('خطأ: $e'), backgroundColor: AppColors.debtRed),
+                );
               }
             },
             child: const Text('حفظ'),
@@ -363,7 +352,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   const SizedBox(height: 18),
                 ],
 
-                // 1. نموذج تعديل البيانات
                 Form(
                   key: _formKey,
                   child: Container(
@@ -422,7 +410,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
                 const SizedBox(height: 18),
 
-                // ================= 2. قسم النسخ الاحتياطي التلقائي المجدول =================
                 Container(
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
@@ -494,7 +481,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ),
                       const SizedBox(height: 14),
 
-                      // بطاقة تفاصيل موعد النسخ القادم وتاريخ آخر نسخة
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
@@ -540,7 +526,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ),
                       const SizedBox(height: 12),
 
-                      // زر رفع وتنزيل يدوي فوري
                       OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size.fromHeight(44),
@@ -566,7 +551,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
                 const SizedBox(height: 18),
 
-                // 3. تقارير الإكسل الفردية
                 const Text(
                   'تقارير الإكسل والنسخ الفردي',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
@@ -685,10 +669,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ref.invalidate(adminUsersListProvider);
                       ref.invalidate(subscriptionPlansProvider);
                       ref.invalidate(profitTransactionsProvider);
+                      ref.invalidate(planSubscriberCountsProvider);
                       ref.read(selectedTowerFilterProvider.notifier).state = null;
                       ref.read(selectedProfitTowerProvider.notifier).state = null;
                       ref.read(profitFromDateProvider.notifier).state = null;
                       ref.read(profitToDateProvider.notifier).state = null;
+                      ref.read(reportsFromDateProvider.notifier).state = null;
+                      ref.read(reportsToDateProvider.notifier).state = null;
                       ref.read(homeSearchQueryProvider.notifier).state = '';
 
                       await ref.read(appServiceProvider).signOut();
