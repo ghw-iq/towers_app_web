@@ -110,7 +110,7 @@ class AppDialogs {
     );
   }
 
-  /// 2. نافذة إضافة مشترك جديد (مع اختيار باقة الاشتراك، سعر البيع، ونقد أم آجل)
+  /// 2. نافذة إضافة مشترك جديد (مع منع تكرار الرقم وإظهار رسالة واضحة)
   static Future<void> showAddSubscriber(BuildContext context, WidgetRef ref) async {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
@@ -120,7 +120,8 @@ class AppDialogs {
 
     String? selectedTowerId;
     SubscriptionPlan? selectedPlan;
-    String paymentMode = 'credit'; // 'credit' آجل | 'cash' نقد
+    String paymentMode = 'credit';
+    String? errorMessage;
     bool isLoading = false;
 
     final towers = ref.read(towersListProvider).value ?? [];
@@ -206,10 +207,14 @@ class AppDialogs {
                         hintText: '07xxxxxxxxx',
                       ),
                       validator: AppValidators.validatePhone,
+                      onChanged: (_) {
+                        if (errorMessage != null) {
+                          setState(() => errorMessage = null);
+                        }
+                      },
                     ),
                     const SizedBox(height: 12),
 
-                    // اختيار نوع الاشتراك (الباقة)
                     DropdownButtonFormField<SubscriptionPlan?>(
                       initialValue: selectedPlan,
                       decoration: const InputDecoration(
@@ -256,7 +261,6 @@ class AppDialogs {
                         onChanged: (_) => setState(() {}),
                       ),
                       const SizedBox(height: 10),
-                      // عرض الربح المتوقع من الاشتراك
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
@@ -284,7 +288,6 @@ class AppDialogs {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      // اختيار نوع الدفع (آجل أم نقد)
                       SegmentedButton<String>(
                         segments: const [
                           ButtonSegment(
@@ -321,13 +324,46 @@ class AppDialogs {
                         return null;
                       },
                     ),
+
+                    // رسالة الخطأ الواضحة داخل النافذة (مثلاً عند تكرار رقم الهاتف)
+                    if (errorMessage != null) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.debtRed.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.debtRed.withValues(alpha: 0.5)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error_outline, color: AppColors.debtRed, size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                errorMessage!,
+                                style: const TextStyle(
+                                  color: AppColors.debtRed,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
                     const SizedBox(height: 20),
                     ElevatedButton(
                       onPressed: isLoading
                           ? null
                           : () async {
                               if (!formKey.currentState!.validate()) return;
-                              setState(() => isLoading = true);
+                              setState(() {
+                                isLoading = true;
+                                errorMessage = null;
+                              });
                               try {
                                 final debt = double.tryParse(debtController.text) ?? 0.0;
                                 final sell = selectedPlan != null
@@ -352,12 +388,9 @@ class AppDialogs {
                                 if (ctx.mounted) Navigator.pop(ctx);
                               } catch (e) {
                                 if (ctx.mounted) {
-                                  ScaffoldMessenger.of(ctx).showSnackBar(
-                                    SnackBar(
-                                      content: Text('خطأ: $e'),
-                                      backgroundColor: AppColors.debtRed,
-                                    ),
-                                  );
+                                  setState(() {
+                                    errorMessage = e.toString().replaceFirst('Exception: ', '');
+                                  });
                                 }
                               } finally {
                                 if (ctx.mounted) setState(() => isLoading = false);
@@ -391,9 +424,9 @@ class AppDialogs {
     final amountController = TextEditingController();
     final notesController = TextEditingController();
 
-    bool isPayment = true; // true: تسديد دين قديم، false: إضافة دين / اشتراك جديد
+    bool isPayment = true;
     SubscriptionPlan? selectedPlan;
-    String paymentMode = 'credit'; // عند تفعيل اشتراك: 'credit' آجل | 'cash' نقد
+    String paymentMode = 'credit';
     bool isLoading = false;
 
     final plans = ref.read(subscriptionPlansProvider).value ?? [];
@@ -473,7 +506,6 @@ class AppDialogs {
                     ),
                     const SizedBox(height: 14),
 
-                    // إذا اختار "اشتراك / دين"، نعرض قائمة اختيار باقات الشركة
                     if (!isPayment) ...[
                       DropdownButtonFormField<SubscriptionPlan?>(
                         initialValue: selectedPlan,
@@ -647,7 +679,7 @@ class AppDialogs {
                                       .clamp(0.0, double.infinity);
                                 } else if (selectedPlan != null && paymentMode == 'cash') {
                                   txType = 'cash_subscription';
-                                  newDebt = subscriber.debtAmount; // لا يزيد الدين
+                                  newDebt = subscriber.debtAmount;
                                 } else {
                                   txType = 'debt_addition';
                                   newDebt = subscriber.debtAmount + changeAmount;

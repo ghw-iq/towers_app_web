@@ -57,12 +57,10 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
   Future<void> _saveNewPlans() async {
     final validPlans = <Map<String, dynamic>>[];
 
-    // تنظيف الحقول الفارغة والتحقق من المدخلات
     for (int i = _inputRows.length - 1; i >= 0; i--) {
       final name = _inputRows[i].nameController.text.trim();
       final priceText = _inputRows[i].priceController.text.trim();
 
-      // إذا تُرك الصف فارغاً بالكامل يُحذف تلقائياً للحفاظ على تنسيق الشاشة
       if (name.isEmpty && priceText.isEmpty) {
         if (_inputRows.length > 1) {
           _inputRows[i].dispose();
@@ -106,7 +104,6 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
       await ref.read(appServiceProvider).addSubscriptionPlans(validPlans.reversed.toList());
       ref.invalidate(subscriptionPlansProvider);
 
-      // إعادة ضبط الحقول إلى صف واحد فارغ نظيف
       for (var row in _inputRows) {
         row.dispose();
       }
@@ -239,15 +236,39 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
     }
   }
 
+  Future<void> _pickDate({required bool isFromDate}) async {
+    final currentFrom = ref.read(profitFromDateProvider);
+    final currentTo = ref.read(profitToDateProvider);
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: (isFromDate ? currentFrom : currentTo) ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      helpText: isFromDate ? 'اختر تاريخ البداية (من)' : 'اختر تاريخ النهاية (إلى)',
+    );
+
+    if (picked != null) {
+      if (isFromDate) {
+        ref.read(profitFromDateProvider.notifier).state = picked;
+      } else {
+        ref.read(profitToDateProvider.notifier).state = picked;
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final plansAsync = ref.watch(subscriptionPlansProvider);
     final profitsAsync = ref.watch(profitTransactionsProvider);
     final towersAsync = ref.watch(towersListProvider);
     final selectedTowerId = ref.watch(selectedProfitTowerProvider);
+    final fromDate = ref.watch(profitFromDateProvider);
+    final toDate = ref.watch(profitToDateProvider);
 
     final currencyFormatter = NumberFormat('#,##0', 'en_US');
     final dateFormatter = DateFormat('yyyy/MM/dd - hh:mm a');
+    final shortDateFmt = DateFormat('yyyy/MM/dd');
 
     return Scaffold(
       appBar: AppBar(
@@ -298,7 +319,6 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // قائمة الباقات المحفوظة مسبقاً
                     plansAsync.when(
                       data: (plans) {
                         if (plans.isEmpty) {
@@ -360,7 +380,6 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                       error: (e, _) => Text('خطأ: $e'),
                     ),
 
-                    // حقول إدخال اشتراكات جديدة (تبدأ بحقلين فارغين)
                     ...List.generate(_inputRows.length, (index) {
                       final row = _inputRows[index];
                       return Padding(
@@ -404,7 +423,6 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                       );
                     }),
 
-                    // زر + إضافة اسم اشتراك جديد
                     Row(
                       children: [
                         Expanded(
@@ -443,7 +461,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
 
               const SizedBox(height: 22),
 
-              // ================= القسم 2: فرز الأرباح وحساب أرباح الأبراج =================
+              // ================= القسم 2: تقارير الأرباح والمبيعات مع فلتر التاريخ =================
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -451,7 +469,6 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                     'تقارير الأرباح والمبيعات',
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                   ),
-                  // فلتر البرج
                   towersAsync.when(
                     data: (towers) {
                       return DropdownButton<String?>(
@@ -480,20 +497,170 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
+
+              // شريط فلترة التاريخ (من تاريخ -> إلى تاريخ)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.date_range, size: 17, color: AppColors.primary),
+                            const SizedBox(width: 6),
+                            Text(
+                              (fromDate == null && toDate == null)
+                                  ? 'الفترة: كل الأرباح من تاريخ التسجيل'
+                                  : 'فلترة الأرباح حسب التاريخ:',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                        if (fromDate != null || toDate != null)
+                          InkWell(
+                            onTap: () {
+                              ref.read(profitFromDateProvider.notifier).state = null;
+                              ref.read(profitToDateProvider.notifier).state = null;
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.debtRed.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.close, size: 13, color: AppColors.debtRed),
+                                  SizedBox(width: 3),
+                                  Text(
+                                    'عرض الكل',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.debtRed,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () => _pickDate(isFromDate: true),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: AppColors.background,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: fromDate != null ? AppColors.primary : AppColors.border,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.calendar_today, size: 15, color: AppColors.primary),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      fromDate != null
+                                          ? 'من: ${shortDateFmt.format(fromDate)}'
+                                          : 'من تاريخ (الكل)',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: fromDate != null ? FontWeight.bold : FontWeight.normal,
+                                        color: fromDate != null ? AppColors.primary : AppColors.textSecondary,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () => _pickDate(isFromDate: false),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: AppColors.background,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: toDate != null ? AppColors.primary : AppColors.border,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.event, size: 15, color: AppColors.primary),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      toDate != null
+                                          ? 'إلى: ${shortDateFmt.format(toDate)}'
+                                          : 'إلى تاريخ (الكل)',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: toDate != null ? FontWeight.bold : FontWeight.normal,
+                                        color: toDate != null ? AppColors.primary : AppColors.textSecondary,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
 
               profitsAsync.when(
                 data: (allProfits) {
-                  final filtered = selectedTowerId == null
-                      ? allProfits
-                      : allProfits.where((p) => p.towerId == selectedTowerId).toList();
+                  // تطبيق فلترة البرج + فلترة التاريخ (من - إلى)
+                  final filtered = allProfits.where((tx) {
+                    if (selectedTowerId != null && tx.towerId != selectedTowerId) {
+                      return false;
+                    }
+                    final localDate = tx.createdAt.toLocal();
+
+                    if (fromDate != null) {
+                      final start = DateTime(fromDate.year, fromDate.month, fromDate.day, 0, 0, 0);
+                      if (localDate.isBefore(start)) return false;
+                    }
+                    if (toDate != null) {
+                      final end = DateTime(toDate.year, toDate.month, toDate.day, 23, 59, 59, 999);
+                      if (localDate.isAfter(end)) return false;
+                    }
+                    return true;
+                  }).toList();
 
                   double cashProfit = 0;
                   double creditProfit = 0;
                   double totalSales = 0;
                   double totalCost = 0;
 
-                  // خريطة لحساب ربح كل برج
                   final Map<String, Map<String, double>> towerProfitsMap = {};
 
                   for (var tx in filtered) {
@@ -525,7 +692,6 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // بطاقات فرز الأرباح: أرباح النقد vs أرباح الديون
                       Row(
                         children: [
                           Expanded(
@@ -542,14 +708,13 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                               title: 'أرباح الديون (الآجل)',
                               amount: '${currencyFormatter.format(creditProfit)} د.ع',
                               icon: Icons.schedule,
-                              color: const Color(0xFFD97706), // عنبري/برتقالي
+                              color: const Color(0xFFD97706),
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 10),
 
-                      // بطاقة إجمالي الأرباح والمبيعات والكلفة
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -564,7 +729,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 const Text(
-                                  'صافي الربح الكلي:',
+                                  'صافي الربح للفترة:',
                                   style: TextStyle(color: Colors.white70, fontSize: 14),
                                 ),
                                 Text(
@@ -595,7 +760,6 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                         ),
                       ),
 
-                      // تفصيل أرباح كل برج على حدة (عند عرض كافة الأبراج)
                       if (selectedTowerId == null && towerProfitsMap.isNotEmpty) ...[
                         const SizedBox(height: 18),
                         const Text(
@@ -649,9 +813,18 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                       ],
 
                       const SizedBox(height: 20),
-                      const Text(
-                        'سجل الاشتراكات المباعة وأرباحها:',
-                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'سجل الاشتراكات المباعة وأرباحها:',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            '(${filtered.length} عملية)',
+                            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 8),
 
@@ -665,7 +838,7 @@ class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
                           ),
                           child: const Center(
                             child: Text(
-                              'لا توجد مبيعات اشتراكات مسجلة بعد',
+                              'لا توجد مبيعات اشتراكات في هذه الفترة',
                               style: TextStyle(color: AppColors.textSecondary),
                             ),
                           ),

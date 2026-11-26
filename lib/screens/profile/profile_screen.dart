@@ -245,7 +245,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // زر لوحة تحكم الأدمن (يظهر للأدمن فقط)
                 if (profile.isAdmin) ...[
                   Container(
                     decoration: BoxDecoration(
@@ -275,7 +274,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   const SizedBox(height: 18),
                 ],
 
-                // 1. نموذج تعديل البيانات
                 Form(
                   key: _formKey,
                   child: Container(
@@ -334,7 +332,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
                 const SizedBox(height: 18),
 
-                // 2. تقارير الإكسل
                 const Text(
                   'تقارير الإكسل والنسخ الاحتياطي',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
@@ -399,7 +396,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
                 const SizedBox(height: 18),
 
-                // 3. زر تغيير كلمة المرور
                 Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -416,7 +412,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
                 const SizedBox(height: 24),
 
-                // 4. زر تسجيل الخروج مع تصفير كافة المزودات بالكامل
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
@@ -457,6 +452,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ref.invalidate(profitTransactionsProvider);
                       ref.read(selectedTowerFilterProvider.notifier).state = null;
                       ref.read(selectedProfitTowerProvider.notifier).state = null;
+                      ref.read(profitFromDateProvider.notifier).state = null;
+                      ref.read(profitToDateProvider.notifier).state = null;
                       ref.read(homeSearchQueryProvider.notifier).state = '';
 
                       await ref.read(appServiceProvider).signOut();
@@ -466,7 +463,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
                 const SizedBox(height: 36),
 
-                // حقوق التصميم والتطوير
                 Center(
                   child: Column(
                     children: [

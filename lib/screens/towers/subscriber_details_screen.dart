@@ -12,20 +12,240 @@ class SubscriberDetailsScreen extends ConsumerWidget {
 
   const SubscriberDetailsScreen({super.key, required this.subscriber});
 
+  Future<void> _showEditTransactionDialog(
+    BuildContext context,
+    WidgetRef ref,
+    SubscriberTransaction tx,
+  ) async {
+    final formKey = GlobalKey<FormState>();
+    final amountController = TextEditingController(text: tx.amount.toStringAsFixed(0));
+    final notesController = TextEditingController(text: tx.notes ?? '');
+    final currencyFmt = NumberFormat('#,##0', 'en_US');
+    String? errorMsg;
+    bool isLoading = false;
+
+    final bool isPlanTx = tx.planName != null && tx.costPrice != null;
+    final bool isCashSub = tx.type == 'cash_subscription';
+    final bool isPayment = tx.type == 'payment';
+
+    String headerTitle;
+    if (isCashSub) {
+      headerTitle = 'تعديل اشتراك (${tx.planName}) - نقداً';
+    } else if (isPayment) {
+      headerTitle = 'تعديل تسديد واصل';
+    } else if (tx.planName != null) {
+      headerTitle = 'تعديل اشتراك (${tx.planName}) - آجل';
+    } else {
+      headerTitle = 'تعديل إضافة دين';
+    }
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) {
+          final enteredAmount = double.tryParse(amountController.text.trim()) ?? 0.0;
+          final updatedProfit = isPlanTx ? (enteredAmount - tx.costPrice!) : 0.0;
+
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+            ),
+            child: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.edit_outlined, color: AppColors.secondary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            headerTitle,
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 20),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('المبلغ المسجل سابقاً:', style: TextStyle(fontSize: 12)),
+                              Text(
+                                '${currencyFmt.format(tx.amount)} د.ع',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              ),
+                            ],
+                          ),
+                          if (isPlanTx) ...[
+                            const Divider(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'كلفة الشركة: ${currencyFmt.format(tx.costPrice)} د.ع',
+                                  style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                                ),
+                                Text(
+                                  'الربح الجديد: ${currencyFmt.format(updatedProfit)} د.ع',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: updatedProfit >= 0 ? AppColors.paidGreen : AppColors.debtRed,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    TextFormField(
+                      controller: amountController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        labelText: isPlanTx ? 'سعر البيع المعدّل (د.ع) *' : 'المبلغ المعدّل (د.ع) *',
+                        prefixIcon: const Icon(Icons.attach_money),
+                      ),
+                      onChanged: (_) => setState(() => errorMsg = null),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) return 'يرجى إدخال المبلغ';
+                        final val = double.tryParse(v.trim());
+                        if (val == null || val <= 0) return 'أدخل مبلغاً صحيحاً أكبر من 0';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    TextFormField(
+                      controller: notesController,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'الملاحظات (تعديل أو إضافة)',
+                        prefixIcon: Icon(Icons.edit_note),
+                      ),
+                    ),
+
+                    if (errorMsg != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.debtRed.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          errorMsg!,
+                          style: const TextStyle(
+                            color: AppColors.debtRed,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 20),
+
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.secondary),
+                      onPressed: isLoading
+                          ? null
+                          : () async {
+                              if (!formKey.currentState!.validate()) return;
+                              setState(() {
+                                isLoading = true;
+                                errorMsg = null;
+                              });
+                              try {
+                                final newAmount = double.parse(amountController.text.trim());
+                                await ref.read(appServiceProvider).updateSubscriberTransaction(
+                                      oldTx: tx,
+                                      newAmount: newAmount,
+                                      newNotes: notesController.text,
+                                    );
+
+                                ref.invalidate(subscriberByIdProvider(tx.subscriberId));
+                                ref.invalidate(subscriberTransactionsProvider(tx.subscriberId));
+                                ref.invalidate(subscribersByTowerProvider);
+                                ref.invalidate(unpaidSubscribersProvider);
+                                ref.invalidate(financialSummaryProvider);
+                                ref.invalidate(profitTransactionsProvider);
+                                ref.invalidate(cashBoxTransactionsProvider);
+
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('تم تعديل الحركة وتحديث الرصيد بنجاح'),
+                                      backgroundColor: AppColors.paidGreen,
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                if (ctx.mounted) {
+                                  setState(() {
+                                    errorMsg = e.toString().replaceFirst('Exception: ', '');
+                                  });
+                                }
+                              } finally {
+                                if (ctx.mounted) setState(() => isLoading = false);
+                              }
+                            },
+                      child: isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : const Text('حفظ التعديل'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final liveSubAsync = ref.watch(subscriberByIdProvider(subscriber.id));
+    final liveSub = liveSubAsync.value ?? subscriber;
+
     final transactionsAsync = ref.watch(subscriberTransactionsProvider(subscriber.id));
     final currencyFormatter = NumberFormat('#,##0', 'en_US');
     final dateFormatter = DateFormat('yyyy/MM/dd - hh:mm a');
 
-    // قراءة أحدث دين متبقٍ مباشرة من آخر حركة مسجلة ليظهر التحديث فوراً
-    final latestTxList = transactionsAsync.value;
-    final currentDebt = (latestTxList != null && latestTxList.isNotEmpty)
-        ? latestTxList.first.remainingDebt
-        : subscriber.debtAmount;
-
-    final hasDebt = currentDebt > 0;
-    final updatedSub = subscriber.copyWith(debtAmount: currentDebt);
+    final hasDebt = liveSub.debtAmount > 0;
 
     return Scaffold(
       appBar: AppBar(
@@ -35,7 +255,7 @@ class SubscriberDetailsScreen extends ConsumerWidget {
             tooltip: 'حذف المشترك',
             icon: const Icon(Icons.delete_outline, color: AppColors.debtRed),
             onPressed: () async {
-              await AppDialogs.showDeleteSubscriberConfirm(context, ref, updatedSub);
+              await AppDialogs.showDeleteSubscriberConfirm(context, ref, liveSub);
               if (context.mounted) Navigator.pop(context);
             },
           ),
@@ -43,6 +263,7 @@ class SubscriberDetailsScreen extends ConsumerWidget {
       ),
       body: RefreshIndicator(
         onRefresh: () async {
+          ref.invalidate(subscriberByIdProvider(subscriber.id));
           ref.invalidate(subscriberTransactionsProvider(subscriber.id));
           ref.invalidate(subscribersByTowerProvider);
           ref.invalidate(unpaidSubscribersProvider);
@@ -54,7 +275,7 @@ class SubscriberDetailsScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 1. بطاقة معلومات المشترك والرصيد
+              // 1. بطاقة معلومات المشترك والرصيد الحقيقي المحدّث
               Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
@@ -84,19 +305,19 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      subscriber.fullName,
+                      liveSub.fullName,
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      subscriber.phone,
+                      liveSub.phone,
                       style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
                     ),
-                    if (subscriber.towerName != null) ...[
+                    if (liveSub.towerName != null) ...[
                       const SizedBox(height: 6),
                       Chip(
                         avatar: const Icon(Icons.cell_tower, size: 16, color: AppColors.primary),
-                        label: Text(subscriber.towerName!),
+                        label: Text(liveSub.towerName!),
                         backgroundColor: AppColors.primary.withValues(alpha: 0.08),
                         side: BorderSide.none,
                       ),
@@ -111,7 +332,7 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                                 style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                             const SizedBox(height: 4),
                             Text(
-                              '${currencyFormatter.format(currentDebt)} د.ع',
+                              '${currencyFormatter.format(liveSub.debtAmount)} د.ع',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -127,7 +348,7 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                                 style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                             const SizedBox(height: 4),
                             Text(
-                              '${currencyFormatter.format(subscriber.paidAmount)} د.ع',
+                              '${currencyFormatter.format(liveSub.paidAmount)} د.ع',
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -153,12 +374,15 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                 icon: const Icon(Icons.add_card, color: Colors.white),
                 label: const Text('تسديد دين أو تفعيل اشتراك جديد',
                     style: TextStyle(fontWeight: FontWeight.bold)),
-                onPressed: () => AppDialogs.showUpdateDebt(context, ref, updatedSub),
+                onPressed: () async {
+                  await AppDialogs.showUpdateDebt(context, ref, liveSub);
+                  ref.invalidate(subscriberByIdProvider(subscriber.id));
+                },
               ),
 
               const SizedBox(height: 24),
 
-              // 2. سجل الحركات والملاحظات
+              // 2. سجل الحركات والملاحظات (مع زر التعديل لكل حركة)
               const Row(
                 children: [
                   Icon(Icons.history, color: AppColors.primary),
@@ -275,6 +499,16 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                                       style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
                                     ),
                                   ],
+                                ),
+                                const SizedBox(width: 4),
+                                IconButton(
+                                  tooltip: 'تعديل الحركة',
+                                  icon: const Icon(
+                                    Icons.edit_outlined,
+                                    size: 19,
+                                    color: AppColors.secondary,
+                                  ),
+                                  onPressed: () => _showEditTransactionDialog(context, ref, item),
                                 ),
                               ],
                             ),

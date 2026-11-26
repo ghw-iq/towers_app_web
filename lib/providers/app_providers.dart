@@ -91,7 +91,17 @@ final subscribersByTowerProvider = FutureProvider<List<Subscriber>>((ref) async 
   );
 });
 
-// 9. مزود جلب سجل الحركات والملاحظات لمشترك معين
+// 9. مزود جلب بيانات مشترك واحد محدثة لحظياً
+final subscriberByIdProvider =
+    FutureProvider.family<Subscriber, String>((ref, subscriberId) async {
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) throw Exception('المستخدم غير مسجل الدخول');
+
+  final service = ref.watch(appServiceProvider);
+  return await service.getSubscriberById(subscriberId);
+});
+
+// 10. مزود جلب سجل الحركات والملاحظات لمشترك معين
 final subscriberTransactionsProvider =
     FutureProvider.family<List<SubscriberTransaction>, String>((ref, subscriberId) async {
   final userId = ref.watch(currentUserIdProvider);
@@ -101,7 +111,7 @@ final subscriberTransactionsProvider =
   return await service.getSubscriberTransactions(subscriberId);
 });
 
-// 10. مزود أرشيف حركات صندوق النقد
+// 11. مزود أرشيف حركات صندوق النقد
 final cashBoxTransactionsProvider = FutureProvider<List<CashBoxTransaction>>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
   if (userId == null) return [];
@@ -110,7 +120,7 @@ final cashBoxTransactionsProvider = FutureProvider<List<CashBoxTransaction>>((re
   return await service.getCashBoxTransactions();
 });
 
-// 11. مزود قائمة المستخدمين في شاشة الأدمن
+// 12. مزود قائمة المستخدمين في شاشة الأدمن
 final adminUsersListProvider = FutureProvider<List<UserProfile>>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
   if (userId == null) return [];
@@ -119,7 +129,7 @@ final adminUsersListProvider = FutureProvider<List<UserProfile>>((ref) async {
   return await service.adminGetAllUsers();
 });
 
-// 12. مزود باقات واشتراكات الشركة المزودة
+// 13. مزود باقات واشتراكات الشركة المزودة
 final subscriptionPlansProvider = FutureProvider<List<SubscriptionPlan>>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
   if (userId == null) return [];
@@ -128,8 +138,10 @@ final subscriptionPlansProvider = FutureProvider<List<SubscriptionPlan>>((ref) a
   return await service.getSubscriptionPlans();
 });
 
-// 13. مزودات الأرباح وحركات التفعيل (التبويب الرابع)
+// 14. مزودات الأرباح وحركات التفعيل وفلتر التاريخ
 final selectedProfitTowerProvider = StateProvider<String?>((ref) => null);
+final profitFromDateProvider = StateProvider<DateTime?>((ref) => null);
+final profitToDateProvider = StateProvider<DateTime?>((ref) => null);
 
 final profitTransactionsProvider = FutureProvider<List<SubscriberTransaction>>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
