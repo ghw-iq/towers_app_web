@@ -5,6 +5,8 @@ class UserProfile {
   final String phone;
   final String role;
   final String? passcode;
+  final int backupIntervalDays; // كل كم يوم يتم أخذ نسخة احتياطية (0 = متوقف)
+  final DateTime? lastBackupAt; // تاريخ آخر نسخة احتياطية
   final DateTime createdAt;
 
   UserProfile({
@@ -13,6 +15,8 @@ class UserProfile {
     required this.phone,
     this.role = 'user',
     this.passcode,
+    this.backupIntervalDays = 0,
+    this.lastBackupAt,
     required this.createdAt,
   });
 
@@ -25,6 +29,10 @@ class UserProfile {
       phone: json['phone'] as String? ?? '',
       role: json['role'] as String? ?? 'user',
       passcode: json['passcode'] as String?,
+      backupIntervalDays: (json['backup_interval_days'] as num?)?.toInt() ?? 0,
+      lastBackupAt: json['last_backup_at'] != null
+          ? DateTime.parse(json['last_backup_at'] as String)
+          : null,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -36,6 +44,8 @@ class UserProfile {
       'phone': phone,
       'role': role,
       if (passcode != null) 'passcode': passcode,
+      'backup_interval_days': backupIntervalDays,
+      if (lastBackupAt != null) 'last_backup_at': lastBackupAt!.toUtc().toIso8601String(),
     };
   }
 
@@ -44,6 +54,8 @@ class UserProfile {
     String? phone,
     String? role,
     String? passcode,
+    int? backupIntervalDays,
+    DateTime? lastBackupAt,
   }) {
     return UserProfile(
       id: id,
@@ -51,6 +63,8 @@ class UserProfile {
       phone: phone ?? this.phone,
       role: role ?? this.role,
       passcode: passcode ?? this.passcode,
+      backupIntervalDays: backupIntervalDays ?? this.backupIntervalDays,
+      lastBackupAt: lastBackupAt ?? this.lastBackupAt,
       createdAt: createdAt,
     );
   }
@@ -209,21 +223,19 @@ class SubscriberTransaction {
   final String id;
   final String userId;
   final String subscriberId;
-  final String type; // 'payment' | 'debt_addition' | 'adjustment' | 'cash_subscription'
+  final String type;
   final double amount;
   final double remainingDebt;
   final String? notes;
   final DateTime createdAt;
 
-  // حقول لقطة السعر والأرباح التاريخية
   final String? planId;
   final String? planName;
   final double? costPrice;
   final double? sellingPrice;
   final double? profit;
-  final String? paymentMode; // 'cash' أو 'credit'
+  final String? paymentMode;
 
-  // حقول مساعدة لعرض المشترك والبرج في تقرير الأرباح
   final String? subscriberName;
   final String? towerId;
   final String? towerName;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/constants.dart';
+import '../providers/app_providers.dart';
 import 'home/home_screen.dart';
 import 'towers/towers_screen.dart';
 import 'subscriptions/subscriptions_screen.dart';
@@ -23,6 +24,37 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     SubscriptionsScreen(),
     ProfileScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // فحص النسخ الاحتياطي التلقائي عند فتح التطبيق
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _runAutoBackupCheck();
+    });
+  }
+
+  Future<void> _runAutoBackupCheck() async {
+    final triggered = await ref.read(appServiceProvider).checkAndTriggerAutoBackup();
+    if (triggered && mounted) {
+      ref.invalidate(profileProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text('تم تنزيل النسخة الاحتياطية التلقائية للإكسل بنجاح'),
+              ),
+            ],
+          ),
+          backgroundColor: AppColors.paidGreen,
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -18,8 +18,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _intervalController = TextEditingController();
+
   bool _isEditing = false;
   bool _isLoading = false;
+  bool _isSavingInterval = false;
+  bool _isExportingManual = false;
   bool _isExportingReport1 = false;
   bool _isExportingReport2 = false;
 
@@ -27,6 +31,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
+    _intervalController.dispose();
     super.dispose();
   }
 
@@ -34,6 +39,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (!_isEditing) {
       _nameController.text = profile.fullName;
       _phoneController.text = profile.phone;
+      _intervalController.text = profile.backupIntervalDays.toString();
     }
   }
 
@@ -68,6 +74,82 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleSaveInterval() async {
+    final text = _intervalController.text.trim();
+    final days = int.tryParse(text);
+    if (days == null || days < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('يرجى إدخال عدد أيام صحيح (0 أو أكثر)'),
+          backgroundColor: AppColors.debtRed,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSavingInterval = true);
+    try {
+      await ref.read(appServiceProvider).updateBackupInterval(days);
+      ref.invalidate(profileProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              days == 0
+                  ? 'تم إيقاف النسخ الاحتياطي التلقائي'
+                  : 'سيتم أخذ نسخة احتياطية للإكسل تلقائياً كل $days يوم/أيام',
+            ),
+            backgroundColor: AppColors.paidGreen,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطأ: $e'), backgroundColor: AppColors.debtRed),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingInterval = false);
+    }
+  }
+
+  Future<void> _handleManualBackupAll() async {
+    setState(() => _isExportingManual = true);
+    try {
+      await ref.read(appServiceProvider).exportDebtsAndCashBoxReport();
+      await ref.read(appServiceProvider).exportFullReportWithAllTransactions();
+      await ref.read(appServiceProvider).updateLastBackupTimestamp();
+      ref.invalidate(profileProvider);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 8),
+                Text('تم تنزيل النسختين الاحتياطيتين بنجاح'),
+              ],
+            ),
+            backgroundColor: AppColors.paidGreen,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('فشل النسخ الاحتياطي: $e'),
+            backgroundColor: AppColors.debtRed,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingManual = false);
     }
   }
 
@@ -194,6 +276,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Widget build(BuildContext context) {
     final profileAsync = ref.watch(profileProvider);
     final dateFormatter = DateFormat('yyyy/MM/dd');
+    final dateTimeFmt = DateFormat('yyyy/MM/dd - hh:mm a');
 
     return Scaffold(
       appBar: AppBar(
@@ -212,6 +295,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       body: profileAsync.when(
         data: (profile) {
           _initFields(profile);
+
+          DateTime? nextBackupDate;
+          if (profile.backupIntervalDays > 0) {
+            final base = profile.lastBackupAt ?? profile.createdAt;
+            nextBackupDate = base.add(Duration(days: profile.backupIntervalDays));
+          }
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(20),
@@ -274,6 +363,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   const SizedBox(height: 18),
                 ],
 
+                // 1. نموذج تعديل البيانات
                 Form(
                   key: _formKey,
                   child: Container(
@@ -332,8 +422,153 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
                 const SizedBox(height: 18),
 
+                // ================= 2. قسم النسخ الاحتياطي التلقائي المجدول =================
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: profile.backupIntervalDays > 0
+                          ? AppColors.primary.withValues(alpha: 0.35)
+                          : AppColors.border,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.schedule,
+                            color: profile.backupIntervalDays > 0
+                                ? AppColors.primary
+                                : AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'النسخ الاحتياطي التلقائي المجدول',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'حدد كم يوماً تريد أن ينتظر التطبيق ليقوم بعمل نسخة احتياطية للإكسل تلقائياً عند فتحه (اكتب 0 لإيقاف التلقائي):',
+                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                      const SizedBox(height: 14),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _intervalController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'كل كم يوم؟',
+                                hintText: 'مثال: 7 لكل أسبوع، 1 يومياً',
+                                prefixIcon: Icon(Icons.event_repeat),
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              minimumSize: const Size(90, 48),
+                              backgroundColor: AppColors.primary,
+                            ),
+                            onPressed: _isSavingInterval ? null : _handleSaveInterval,
+                            child: _isSavingInterval
+                                ? const SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                  )
+                                : const Text('حفظ المدة', style: TextStyle(fontSize: 13)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+
+                      // بطاقة تفاصيل موعد النسخ القادم وتاريخ آخر نسخة
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('آخر نسخة تم حفظها:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                                Text(
+                                  profile.lastBackupAt != null
+                                      ? dateTimeFmt.format(profile.lastBackupAt!.toLocal())
+                                      : 'لم يتم النسخ مسبقاً',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                            const Divider(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('موعد النسخة القادمة:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                                Text(
+                                  profile.backupIntervalDays > 0 && nextBackupDate != null
+                                      ? dateFormatter.format(nextBackupDate.toLocal())
+                                      : 'النسخ التلقائي متوقف',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: profile.backupIntervalDays > 0
+                                        ? AppColors.paidGreen
+                                        : AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // زر رفع وتنزيل يدوي فوري
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(44),
+                          side: const BorderSide(color: AppColors.primary),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        icon: _isExportingManual
+                            ? const SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.cloud_download_outlined, size: 20),
+                        label: const Text(
+                          'رفع وتنزيل يدوي للنسختين الآن',
+                          style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
+                        ),
+                        onPressed: _isExportingManual ? null : _handleManualBackupAll,
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+
+                // 3. تقارير الإكسل الفردية
                 const Text(
-                  'تقارير الإكسل والنسخ الاحتياطي',
+                  'تقارير الإكسل والنسخ الفردي',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 10),

@@ -379,7 +379,6 @@ class AppService {
     await _client.from('subscriber_transactions').insert(txData);
   }
 
-  /// تعديل حركة مالية سابقة للمشترك (تسديد نقدي / إضافة دين / اشتراك) مع تحديث الأرصدة والأرباح
   Future<void> updateSubscriberTransaction({
     required SubscriberTransaction oldTx,
     required double newAmount,
@@ -425,14 +424,12 @@ class AppService {
       debtShift = delta;
     }
 
-    // 1. تحديث رصيد المشترك
     await _client.from(AppTables.subscribers).update({
       'debt_amount': newSubDebt,
       'paid_amount': newSubPaid,
       'last_debt_updated_at': DateTime.now().toUtc().toIso8601String(),
     }).eq('id', oldTx.subscriberId);
 
-    // 2. تحديث سجل الحركة نفسها (مع تحديث سعر البيع والربح إن كانت باقة)
     final txUpdate = <String, dynamic>{
       'amount': newAmount,
       'remaining_debt': (oldTx.remainingDebt + debtShift).clamp(0.0, double.infinity),
@@ -446,7 +443,6 @@ class AppService {
 
     await _client.from('subscriber_transactions').update(txUpdate).eq('id', oldTx.id);
 
-    // 3. تحديث الأرصدة المتبقية في الحركات الأحدث لتبقى السلسلة المحاسبية متطابقة
     if (debtShift != 0) {
       final newerTx = await _client
           .from('subscriber_transactions')
@@ -526,7 +522,6 @@ class AppService {
     });
   }
 
-  /// تعديل حركة تسديد سابقة في صندوق النقد مع ضمان عدم تحول الرصيد للسالب
   Future<void> updateCashBoxPayment({
     required CashBoxTransaction oldTx,
     required String newTitle,
@@ -584,7 +579,7 @@ class AppService {
     };
   }
 
-  // ================= 8. أدوات وتقارير الإكسل الشاملة =================
+  // ================= 8. أدوات وتقارير الإكسل =================
 
   void _styleCell(
     Sheet sheet,
@@ -982,5 +977,53 @@ class AppService {
         mimeType: MimeType.microsoftExcel,
       );
     }
+  }
+
+  // ================= 9. إدارة النسخ الاحتياطي التلقائي المجدول =================
+
+  Future<void> updateBackupInterval(int days) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) throw Exception('المستخدم غير مسجل الدخول');
+
+    await _client.from(AppTables.profiles).update({
+      'backup_interval_days': days,
+    }).eq('id', userId);
+  }
+
+  Future<void> updateLastBackupTimestamp() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) throw Exception('المستخدم غير مسجل الدخول');
+
+    await _client.from(AppTables.profiles).update({
+      'last_backup_at': DateTime.now().toUtc().toIso8601String(),
+    }).eq('id', userId);
+  }
+
+  /// فحص موعد النسخ الاحتياطي التلقائي عند فتح التطبيق وتنزيل التقريرين إذا حان الموعد
+  Future<bool> checkAndTriggerAutoBackup() async {
+    try {
+      final profile = await getProfile();
+      if (profile.backupIntervalDays <= 0) return false;
+
+      final now = DateTime.now();
+      bool shouldBackup = false;
+
+      if (profile.lastBackupAt == null) {
+        shouldBackup = true;
+      } else {
+        final daysPassed = now.difference(profile.lastBackupAt!).inDays;
+        if (daysPassed >= profile.backupIntervalDays) {
+          shouldBackup = true;
+        }
+      }
+
+      if (shouldBackup) {
+        await exportDebtsAndCashBoxReport();
+        await exportFullReportWithAllTransactions();
+        await updateLastBackupTimestamp();
+        return true;
+      }
+    } catch (_) {}
+    return false;
   }
 }
