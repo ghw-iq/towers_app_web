@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/constants.dart';
 import 'home/home_screen.dart';
 import 'towers/towers_screen.dart';
+import 'subscriptions/subscriptions_screen.dart';
 import 'profile/profile_screen.dart';
 
 class MainNavigationScreen extends ConsumerStatefulWidget {
@@ -19,6 +20,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   final List<Widget> _screens = const [
     HomeScreen(),
     TowersScreen(),
+    SubscriptionsScreen(),
     ProfileScreen(),
   ];
 
@@ -59,6 +61,11 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
               icon: Icon(Icons.cell_tower, color: AppColors.textSecondary),
               selectedIcon: Icon(Icons.cell_tower, color: AppColors.primary),
               label: 'الأبراج',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.monetization_on_outlined, color: AppColors.textSecondary),
+              selectedIcon: Icon(Icons.monetization_on, color: AppColors.primary),
+              label: 'الأرباح',
             ),
             NavigationDestination(
               icon: Icon(Icons.person_outline, color: AppColors.textSecondary),

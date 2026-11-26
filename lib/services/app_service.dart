@@ -119,7 +119,49 @@ class AppService {
     });
   }
 
-  // ================= 3. إدارة الأبراج (Towers) =================
+  // ================= 3. إدارة باقات الشركة (Subscription Plans) =================
+
+  Future<List<SubscriptionPlan>> getSubscriptionPlans() async {
+    final data = await _client
+        .from('subscription_plans')
+        .select()
+        .order('created_at', ascending: true);
+
+    return (data as List).map((e) => SubscriptionPlan.fromJson(e)).toList();
+  }
+
+  Future<void> addSubscriptionPlans(List<Map<String, dynamic>> validPlans) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) throw Exception('المستخدم غير مسجل الدخول');
+    if (validPlans.isEmpty) return;
+
+    final rows = validPlans.map((p) {
+      return {
+        'user_id': userId,
+        'name': (p['name'] as String).trim(),
+        'cost_price': p['cost_price'] as double,
+      };
+    }).toList();
+
+    await _client.from('subscription_plans').insert(rows);
+  }
+
+  Future<void> updateSubscriptionPlan({
+    required String planId,
+    required String name,
+    required double costPrice,
+  }) async {
+    await _client.from('subscription_plans').update({
+      'name': name.trim(),
+      'cost_price': costPrice,
+    }).eq('id', planId);
+  }
+
+  Future<void> deleteSubscriptionPlan(String planId) async {
+    await _client.from('subscription_plans').delete().eq('id', planId);
+  }
+
+  // ================= 4. إدارة الأبراج (Towers) =================
 
   Future<List<Tower>> getTowers() async {
     final data = await _client
@@ -145,35 +187,75 @@ class AppService {
     await _client.from(AppTables.towers).delete().eq('id', towerId);
   }
 
-  // ================= 4. إدارة المشتركين والحركات =================
+  // ================= 5. إدارة المشتركين والحركات والأرباح =================
 
   Future<void> addSubscriber({
     required String towerId,
     required String fullName,
     required String phone,
     required double initialDebt,
+    SubscriptionPlan? plan,
+    double? sellingPrice,
+    String paymentMode = 'credit', // 'credit' (آجل) أو 'cash' (نقد)
   }) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) throw Exception('المستخدم غير مسجل الدخول');
+
+    double finalDebt = initialDebt;
+    double finalPaid = 0.0;
+
+    if (plan != null && sellingPrice != null) {
+      if (paymentMode == 'cash') {
+        finalPaid += sellingPrice; // يدخل لصندوق النقد مباشرة
+      } else {
+        finalDebt += sellingPrice; // يضاف إلى ديون المشترك
+      }
+    }
 
     final insertedSub = await _client.from(AppTables.subscribers).insert({
       'user_id': userId,
       'tower_id': towerId,
       'full_name': fullName.trim(),
       'phone': phone.trim(),
-      'debt_amount': initialDebt,
-      'paid_amount': 0.0,
+      'debt_amount': finalDebt,
+      'paid_amount': finalPaid,
       'last_debt_updated_at': DateTime.now().toUtc().toIso8601String(),
     }).select().single();
 
+    final subId = insertedSub['id'] as String;
+
+    // 1. تسجيل الدين السابق إن وجد
     if (initialDebt > 0) {
       await _client.from('subscriber_transactions').insert({
         'user_id': userId,
-        'subscriber_id': insertedSub['id'],
+        'subscriber_id': subId,
         'type': 'debt_addition',
         'amount': initialDebt,
-        'remaining_debt': initialDebt,
+        'remaining_debt': finalDebt,
         'notes': 'دين افتتاحي سابق عند إنشاء المشترك',
+      });
+    }
+
+    // 2. تسجيل حركة تفعيل الباقة بلقطة السعر التاريخية
+    if (plan != null && sellingPrice != null) {
+      final profit = sellingPrice - plan.costPrice;
+      final isCash = paymentMode == 'cash';
+
+      await _client.from('subscriber_transactions').insert({
+        'user_id': userId,
+        'subscriber_id': subId,
+        'type': isCash ? 'cash_subscription' : 'debt_addition',
+        'amount': sellingPrice,
+        'remaining_debt': finalDebt,
+        'plan_id': plan.id,
+        'plan_name': plan.name,
+        'cost_price': plan.costPrice,
+        'selling_price': sellingPrice,
+        'profit': profit,
+        'payment_mode': paymentMode,
+        'notes': isCash
+            ? 'تفعيل اشتراك (${plan.name}) - نقداً للصندوق'
+            : 'تفعيل اشتراك (${plan.name}) - آجل على الدين',
       });
     }
   }
@@ -223,9 +305,12 @@ class AppService {
   Future<void> updateSubscriberDebt({
     required String subscriberId,
     required double newDebtAmount,
-    required String transactionType,
+    required String transactionType, // 'payment', 'debt_addition', 'cash_subscription'
     required double changeAmount,
     String? notes,
+    SubscriptionPlan? plan,
+    double? sellingPrice,
+    String? paymentMode,
   }) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) throw Exception('المستخدم غير مسجل الدخول');
@@ -235,7 +320,9 @@ class AppService {
       'last_debt_updated_at': DateTime.now().toUtc().toIso8601String(),
     };
 
-    if (transactionType == 'payment' && changeAmount > 0) {
+    // إذا كان تسديد دين عادي أو بيع اشتراك نقداً، يزداد النقد الواصل للصندوق
+    if ((transactionType == 'payment' || transactionType == 'cash_subscription') &&
+        changeAmount > 0) {
       final current = await _client
           .from(AppTables.subscribers)
           .select('paid_amount')
@@ -247,14 +334,26 @@ class AppService {
 
     await _client.from(AppTables.subscribers).update(updateData).eq('id', subscriberId);
 
-    await _client.from('subscriber_transactions').insert({
+    final txData = <String, dynamic>{
       'user_id': userId,
       'subscriber_id': subscriberId,
       'type': transactionType,
       'amount': changeAmount,
       'remaining_debt': newDebtAmount,
       'notes': notes?.trim().isEmpty == true ? null : notes?.trim(),
-    });
+    };
+
+    // حفظ لقطة السعر التاريخية عند تفعيل باقة
+    if (plan != null && sellingPrice != null) {
+      txData['plan_id'] = plan.id;
+      txData['plan_name'] = plan.name;
+      txData['cost_price'] = plan.costPrice;
+      txData['selling_price'] = sellingPrice;
+      txData['profit'] = sellingPrice - plan.costPrice;
+      txData['payment_mode'] = paymentMode;
+    }
+
+    await _client.from('subscriber_transactions').insert(txData);
   }
 
   Future<List<SubscriberTransaction>> getSubscriberTransactions(String subscriberId) async {
@@ -267,11 +366,22 @@ class AppService {
     return (data as List).map((e) => SubscriberTransaction.fromJson(e)).toList();
   }
 
+  /// جلب كافة الحركات التي تحتوي على أرباح (لشاشة الاشتراكات والأرباح)
+  Future<List<SubscriberTransaction>> getProfitTransactions() async {
+    final data = await _client
+        .from('subscriber_transactions')
+        .select('*, subscribers(full_name, tower_id, towers(name))')
+        .not('profit', 'is', null)
+        .order('created_at', ascending: false);
+
+    return (data as List).map((e) => SubscriberTransaction.fromJson(e)).toList();
+  }
+
   Future<void> deleteSubscriber(String subscriberId) async {
     await _client.from(AppTables.subscribers).delete().eq('id', subscriberId);
   }
 
-  // ================= 5. صندوق النقد والأرشفة (Cash Box) =================
+  // ================= 6. صندوق النقد والأرشفة (Cash Box) =================
 
   Future<List<CashBoxTransaction>> getCashBoxTransactions() async {
     final data = await _client
@@ -298,7 +408,7 @@ class AppService {
     });
   }
 
-  // ================= 6. الإحصائيات المالية للرئيسية =================
+  // ================= 7. الإحصائيات المالية للرئيسية =================
 
   Future<Map<String, double>> getFinancialSummary() async {
     final subData = await _client
@@ -332,7 +442,7 @@ class AppService {
     };
   }
 
-  // ================= 7. أدوات تنسيق الإكسل الاحترافية =================
+  // ================= 8. أدوات وتقارير الإكسل =================
 
   void _styleCell(
     Sheet sheet,
@@ -391,7 +501,6 @@ class AppService {
         rightBorder: _thinBorder,
       );
 
-  /// دالة مساعدة لكتابة جدول صندوق النقد بتفاصيله الكاملة في الأعمدة المحددة
   void _writeCashBoxSection(
     Sheet sheet,
     int startCol,
@@ -399,7 +508,7 @@ class AppService {
     Map<String, double> summary,
     DateFormat dateFmt,
   ) {
-    final cashHeaderStyle = _headerStyle('#FF0D9488'); // لون تيل مميز للصندوق
+    final cashHeaderStyle = _headerStyle('#FF0D9488');
     sheet.setColumnWidth(startCol, 28);
     sheet.setColumnWidth(startCol + 1, 20);
     sheet.setColumnWidth(startCol + 2, 30);
@@ -423,7 +532,6 @@ class AppService {
       row++;
     }
 
-    // ملخص أرصدة الصندوق أسفل الحركات
     row++;
     final summaryLabelStyle = _bodyStyle(bgHex: '#FFF1F5F9', bold: true);
     _styleCell(sheet, startCol, row, TextCellValue('إجمالي الواصل من المشتركين'), summaryLabelStyle);
@@ -440,7 +548,6 @@ class AppService {
     _styleCell(sheet, startCol + 1, row, DoubleCellValue(summary['totalPaid'] ?? 0), _headerStyle('#FF16A34A'));
   }
 
-  /// التقرير الأول: كل برج وتحته مشتركوه المدينون فقط + عمود حركات صندوق النقد بتفاصيلها
   Future<void> exportDebtsAndCashBoxReport() async {
     final towers = await getTowers();
     final unpaidSubs = await getSubscribers(unpaidOnly: true);
@@ -452,13 +559,13 @@ class AppService {
     final defaultName = excel.getDefaultSheet() ?? 'Sheet1';
     excel.rename(defaultName, 'الديون والصندوق');
     final sheet = excel['الديون والصندوق'];
-    sheet.isRTL = true; // اتجاه عربي من اليمين لليسار
+    sheet.isRTL = true;
 
     sheet.setRowHeight(0, 28);
     sheet.setColumnWidth(0, 30);
     sheet.setColumnWidth(1, 18);
     sheet.setColumnWidth(2, 22);
-    sheet.setColumnWidth(3, 5); // عمود فاصل أنيق
+    sheet.setColumnWidth(3, 5);
 
     final mainHeaderStyle = _headerStyle('#FF1E3A8A');
     _styleCell(sheet, 0, 0, TextCellValue('البرج / اسم المشترك'), mainHeaderStyle);
@@ -490,15 +597,12 @@ class AppService {
       leftRow++;
     }
 
-    // إجمالي الديون أسفل التقرير
     _styleCell(sheet, 0, leftRow, TextCellValue('إجمالي كافة الديون المستحقة'), _headerStyle('#FFDC2626'));
     _styleCell(sheet, 1, leftRow, TextCellValue(''), _headerStyle('#FFDC2626'));
     _styleCell(sheet, 2, leftRow, DoubleCellValue(grandTotalDebt), _headerStyle('#FFDC2626'));
 
-    // كتابة جدول صندوق النقد بتفاصيله الكاملة في الأعمدة 4 إلى 7
     _writeCashBoxSection(sheet, 4, cashBoxList, summary, dateFmt);
 
-    // استخدام encode() بدلاً من save() لمنع تنزيل نسخة FlutterExcel الثانية!
     final fileBytes = excel.encode();
     if (fileBytes != null) {
       final now = DateTime.now();
@@ -511,7 +615,6 @@ class AppService {
     }
   }
 
-  /// التقرير الثاني: شامل كل برج ومشتركيه مع كافة حركاتهم التفصيلية + عمود حركات صندوق النقد بتفاصيلها
   Future<void> exportFullReportWithAllTransactions() async {
     final towers = await getTowers();
     final allSubs = await getSubscribers(unpaidOnly: false);
@@ -532,11 +635,11 @@ class AppService {
 
     sheet.setRowHeight(0, 28);
     sheet.setColumnWidth(0, 28);
-    sheet.setColumnWidth(1, 18);
+    sheet.setColumnWidth(1, 20);
     sheet.setColumnWidth(2, 26);
     sheet.setColumnWidth(3, 28);
     sheet.setColumnWidth(4, 24);
-    sheet.setColumnWidth(5, 5); // عمود فاصل
+    sheet.setColumnWidth(5, 5);
 
     final mainHeaderStyle = _headerStyle('#FF1E3A8A');
     _styleCell(sheet, 0, 0, TextCellValue('البرج / المشترك / الحركة'), mainHeaderStyle);
@@ -579,8 +682,10 @@ class AppService {
 
         final subTx = allTx.where((t) => t.subscriberId == sub.id).toList();
         for (var tx in subTx) {
-          final isPay = tx.type == 'payment';
-          final typeText = isPay ? 'تسديد واصل' : 'إضافة دين';
+          final isPay = tx.type == 'payment' || tx.type == 'cash_subscription';
+          final typeText = tx.type == 'cash_subscription'
+              ? 'اشتراك نقدي'
+              : (tx.type == 'payment' ? 'تسديد واصل' : 'إضافة دين');
           final colorHex = isPay ? '#FF16A34A' : '#FFDC2626';
 
           _styleCell(sheet, 0, leftRow, TextCellValue('     ↳ حركة مالية'), _bodyStyle(fontHex: '#FF64748B'));
@@ -601,10 +706,8 @@ class AppService {
       leftRow++;
     }
 
-    // كتابة جدول صندوق النقد بتفاصيله الكاملة في الأعمدة 6 إلى 9
     _writeCashBoxSection(sheet, 6, cashBoxList, summary, dateFmt);
 
-    // استخدام encode() بدلاً من save() لمنع تنزيل نسخة FlutterExcel الثانية!
     final fileBytes = excel.encode();
     if (fileBytes != null) {
       final now = DateTime.now();

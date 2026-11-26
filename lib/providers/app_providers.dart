@@ -20,7 +20,7 @@ final currentUserIdProvider = Provider<String?>((ref) {
   return authState.value?.session?.user.id ?? supabase.auth.currentUser?.id;
 });
 
-// 4. مزود بيانات الملف الشخصي (يعاد بناؤه تلقائياً عند تغيير الحساب)
+// 4. مزود بيانات الملف الشخصي
 final profileProvider = FutureProvider<UserProfile>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
   if (userId == null) throw Exception('المستخدم غير مسجل الدخول');
@@ -38,7 +38,7 @@ final towersListProvider = FutureProvider<List<Tower>>((ref) async {
   return await service.getTowers();
 });
 
-// 6. مزود الإحصائيات المالية (تشمل صافي صندوق النقد بعد خصم الصرفيات)
+// 6. مزود الإحصائيات المالية
 final financialSummaryProvider = FutureProvider<Map<String, double>>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
   if (userId == null) {
@@ -117,4 +117,24 @@ final adminUsersListProvider = FutureProvider<List<UserProfile>>((ref) async {
 
   final service = ref.watch(appServiceProvider);
   return await service.adminGetAllUsers();
+});
+
+// 12. مزود باقات واشتراكات الشركة المزودة
+final subscriptionPlansProvider = FutureProvider<List<SubscriptionPlan>>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) return [];
+
+  final service = ref.watch(appServiceProvider);
+  return await service.getSubscriptionPlans();
+});
+
+// 13. مزودات الأرباح وحركات التفعيل (التبويب الرابع)
+final selectedProfitTowerProvider = StateProvider<String?>((ref) => null);
+
+final profitTransactionsProvider = FutureProvider<List<SubscriberTransaction>>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) return [];
+
+  final service = ref.watch(appServiceProvider);
+  return await service.getProfitTransactions();
 });

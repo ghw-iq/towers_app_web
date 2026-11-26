@@ -18,7 +18,14 @@ class SubscriberDetailsScreen extends ConsumerWidget {
     final currencyFormatter = NumberFormat('#,##0', 'en_US');
     final dateFormatter = DateFormat('yyyy/MM/dd - hh:mm a');
 
-    final hasDebt = subscriber.debtAmount > 0;
+    // قراءة أحدث دين متبقٍ مباشرة من آخر حركة مسجلة ليظهر التحديث فوراً
+    final latestTxList = transactionsAsync.value;
+    final currentDebt = (latestTxList != null && latestTxList.isNotEmpty)
+        ? latestTxList.first.remainingDebt
+        : subscriber.debtAmount;
+
+    final hasDebt = currentDebt > 0;
+    final updatedSub = subscriber.copyWith(debtAmount: currentDebt);
 
     return Scaffold(
       appBar: AppBar(
@@ -28,7 +35,7 @@ class SubscriberDetailsScreen extends ConsumerWidget {
             tooltip: 'حذف المشترك',
             icon: const Icon(Icons.delete_outline, color: AppColors.debtRed),
             onPressed: () async {
-              await AppDialogs.showDeleteSubscriberConfirm(context, ref, subscriber);
+              await AppDialogs.showDeleteSubscriberConfirm(context, ref, updatedSub);
               if (context.mounted) Navigator.pop(context);
             },
           ),
@@ -39,6 +46,7 @@ class SubscriberDetailsScreen extends ConsumerWidget {
           ref.invalidate(subscriberTransactionsProvider(subscriber.id));
           ref.invalidate(subscribersByTowerProvider);
           ref.invalidate(unpaidSubscribersProvider);
+          ref.invalidate(profitTransactionsProvider);
         },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -99,10 +107,11 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                       children: [
                         Column(
                           children: [
-                            const Text('الدين المتبقي', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                            const Text('الدين المتبقي',
+                                style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                             const SizedBox(height: 4),
                             Text(
-                              '${currencyFormatter.format(subscriber.debtAmount)} د.ع',
+                              '${currencyFormatter.format(currentDebt)} د.ع',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -114,7 +123,8 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                         Container(height: 30, width: 1, color: AppColors.border),
                         Column(
                           children: [
-                            const Text('إجمالي الواصل', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                            const Text('إجمالي الواصل',
+                                style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                             const SizedBox(height: 4),
                             Text(
                               '${currencyFormatter.format(subscriber.paidAmount)} د.ع',
@@ -141,8 +151,9 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 icon: const Icon(Icons.add_card, color: Colors.white),
-                label: const Text('تسجيل حركة مالية جديدة (تسديد / دين)', style: TextStyle(fontWeight: FontWeight.bold)),
-                onPressed: () => AppDialogs.showUpdateDebt(context, ref, subscriber),
+                label: const Text('تسديد دين أو تفعيل اشتراك جديد',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                onPressed: () => AppDialogs.showUpdateDebt(context, ref, updatedSub),
               ),
 
               const SizedBox(height: 24),
@@ -186,7 +197,22 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                     separatorBuilder: (_, __) => const SizedBox(height: 10),
                     itemBuilder: (ctx, index) {
                       final item = transactions[index];
+                      final isCashSub = item.type == 'cash_subscription';
                       final isPayment = item.type == 'payment';
+                      final isPositiveCash = isPayment || isCashSub;
+
+                      String title;
+                      if (isCashSub) {
+                        title = 'تفعيل اشتراك (${item.planName ?? 'باقة'}) - نقداً';
+                      } else if (isPayment) {
+                        title = 'تسديد دفعة واصلة';
+                      } else if (item.planName != null) {
+                        title = 'تفعيل اشتراك (${item.planName}) - آجل';
+                      } else {
+                        title = 'إضافة دين جديد';
+                      }
+
+                      final statusColor = isPositiveCash ? AppColors.paidGreen : AppColors.debtRed;
 
                       return Container(
                         padding: const EdgeInsets.all(14),
@@ -202,12 +228,12 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                               children: [
                                 CircleAvatar(
                                   radius: 16,
-                                  backgroundColor: isPayment
-                                      ? AppColors.paidGreen.withValues(alpha: 0.12)
-                                      : AppColors.debtRed.withValues(alpha: 0.12),
+                                  backgroundColor: statusColor.withValues(alpha: 0.12),
                                   child: Icon(
-                                    isPayment ? Icons.south_west : Icons.north_east,
-                                    color: isPayment ? AppColors.paidGreen : AppColors.debtRed,
+                                    isCashSub
+                                        ? Icons.wifi_tethering
+                                        : (isPayment ? Icons.south_west : Icons.north_east),
+                                    color: statusColor,
                                     size: 16,
                                   ),
                                 ),
@@ -217,10 +243,11 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        isPayment ? 'تسديد دفعة واصلة' : 'إضافة دين جديد',
+                                        title,
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
-                                          color: isPayment ? AppColors.paidGreen : AppColors.debtRed,
+                                          color: statusColor,
+                                          fontSize: 13,
                                         ),
                                       ),
                                       Text(
@@ -234,11 +261,13 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
                                     Text(
-                                      '${isPayment ? "-" : "+"}${currencyFormatter.format(item.amount)} د.ع',
+                                      isCashSub
+                                          ? '${currencyFormatter.format(item.amount)} د.ع (كاش)'
+                                          : '${isPayment ? "-" : "+"}${currencyFormatter.format(item.amount)} د.ع',
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
-                                        fontSize: 15,
-                                        color: isPayment ? AppColors.paidGreen : AppColors.debtRed,
+                                        fontSize: 14,
+                                        color: statusColor,
                                       ),
                                     ),
                                     Text(
@@ -250,7 +279,6 @@ class SubscriberDetailsScreen extends ConsumerWidget {
                               ],
                             ),
 
-                            // الملاحظة المدونة للحركة
                             if (item.notes != null && item.notes!.isNotEmpty) ...[
                               const SizedBox(height: 10),
                               Container(
